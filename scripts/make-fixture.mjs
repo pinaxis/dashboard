@@ -9,94 +9,81 @@ const D1 = "2026-09-14T10:00:00Z";
 const D2 = "2026-09-15T10:00:00Z";
 const D3 = "2026-09-16T10:00:00Z";
 
-const RESULTS = [
-  ["github-token", "ghp_a", 0, "credentials", "o/alpha", ".env", 2, D1],
-  ["github-token", "ghp_b", 0, "credentials", "o/beta", "config.md", 1, D2],
-  ["openai-api-key", "sk-a", 0, "credentials", "o/alpha", "notes.md", 1, D1],
-  ["gcp-api-key", "AIza_a", 1, "credentials", "o/gamma", "app.js", 1, D2],
-  ["gcp-api-key", "AIza_b", 1, "credentials", "o/alpha", "app.js", 1, D3],
-  ["gcp-service-account-key", "sa@x.iam.gserviceaccount.com", 1, "credentials", "o/delta", "key.txt", 1, D3],
-  ["stripe-publishable-key", "pk_live_a", 1, "public-keys", "o/beta", "index.html", 1, D1],
-  ["maven-coordinate", "com.foo:bar:1.0", 1, "dependencies", "o/eps", "build.gradle", 1, D2],
+// type, target, key, label, category, valid, platform, props, popularity, severity, band, seen
+const NODES = [
+  ["SECRET", "github-token", "ghp_aaaaaaaaaaaabbbb", null, "credentials", 0, "github",
+    '{"validated":true,"weight":2}', null, 60, "MEDIUM", D1],
+  ["SECRET", "openai-api-key", "sk-aaaaaaaaaaaabbbb", null, "credentials", 1, "github",
+    '{"validated":true,"weight":1}', null, 90, "CRITICAL", D1],
+  ["SECRET", "gcp-api-key", "AIzaaaaaaaaaaaabbbb", null, "credentials", 1, "github",
+    '{"validated":false,"weight":1}', null, 40, "LOW", D2],
+  ["REPOSITORY", "", "github:acme/api", "acme/api", null, null, "github", "{}", null, 90, "CRITICAL", D1],
+  ["REPOSITORY", "", "github:acme/web", "acme/web", null, null, "github", "{}", null, 40, "LOW", D2],
+  ["OWNER", "", "github:acme", "acme", null, null, "github", "{}", null, 90, "CRITICAL", D1],
+  ["PACKAGE", "npm-package", "react", "react", "dependencies", null, "github", "{}", 5000, 10, "LOW", D1],
+  ["MAINTAINER", "", "github:jdoe", "jdoe", null, null, "github", "{}", null, 90, "CRITICAL", D2],
+  ["MAINTAINER", "", "github:asmith", "asmith", null, null, "github", "{}", null, 90, "CRITICAL", D2],
 ];
 
 /**
- * @remarks the last five rows reuse a (target, value) pair already in RESULTS, so they add locations
- * without adding findings, and they carry the path shapes the extension logic must never publish: a
- * directory component, a backslash path, a backslash path whose DIRECTORY carries the only dot, a
- * datestamped suffix and a dotted config name.
+ * @remarks the LEAKED_IN contexts carry the path shapes the reduction must never publish: a directory
+ * component, a backslash path, and a backslash path whose only dot sits in a DIRECTORY name.
  */
-const LOCATIONS = [
-  ["github-token", "ghp_a", "o/alpha", ".env", D1],
-  ["github-token", "ghp_a", "o/alpha2", ".env", D1],
-  ["github-token", "ghp_b", "o/beta", "config.md", D2],
-  ["openai-api-key", "sk-a", "o/alpha", "notes.md", D1],
-  ["gcp-api-key", "AIza_a", "o/gamma", "app.js", D2],
-  ["gcp-api-key", "AIza_b", "o/alpha", "app.js", D3],
-  ["gcp-service-account-key", "sa@x.iam.gserviceaccount.com", "o/delta", "key.txt", D3],
-  ["stripe-publishable-key", "pk_live_a", "o/beta", "index.html", D1],
-  ["maven-coordinate", "com.foo:bar:1.0", "o/eps", "build.gradle", D2],
-  ["github-token", "ghp_a", "o/alpha", "src/config/app.js", D1],
-  ["openai-api-key", "sk-a", "o/alpha", "deep\\win\\path\\notes.txt", D1],
-  ["openai-api-key", "sk-a", "o/alpha", "deep\\win\\v1.2\\dist\\config", D1],
-  ["gcp-api-key", "AIza_b", "o/alpha", "backup.20251108_222836", D3],
-  ["gcp-service-account-key", "sa@x.iam.gserviceaccount.com", "o/alpha", ".env.production", D3],
+const EDGES = [
+  [1, 4, "LEAKED_IN", "src/config/.env", 1, 60],
+  [2, 4, "LEAKED_IN", "deep\\win\\notes.txt", 1, 90],
+  [3, 5, "LEAKED_IN", "deep\\win\\v1.2\\dist\\config", 1, 40],
+  [4, 6, "OWNED_BY", "", 1, 90],
+  [5, 6, "OWNED_BY", "", 1, 40],
+  [4, 6, "OWNED_BY", "github:acme/api", 1, 90],
+  [7, 5, "USED_IN", "package.json", 1, 0],
+  [8, 4, "MAINTAINS", "", 120, 90],
+  [9, 4, "MAINTAINS", "", 30, 90],
+  [8, 9, "CO_MAINTAINS", "github:acme/api", 1, 90],
 ];
 
-const REFERENCES = [
-  ["npm-package", "react", "npmjs.com", "dependencies", 5000, 3],
-  ["npm-package", "left-pad", "npmjs.com", "dependencies", 100, 1],
-  ["pypi-package", "flask", "pypi.org", "dependencies", 900, 2],
-  ["stack-tool", "docker", null, "tech-stack", 7864320, 0],
-  ["pypi-package", "uncounted", "pypi.org", "dependencies", null, 1],
-  ["github-action", "actions/checkout", "github.com", "ci-actions", 9000, 4],
-];
-
-const VARIANTS = [
-  ["npm-package", "react", "18.2.0", 5],
-  ["npm-package", "react", "17.0.2", 2],
-  ["pypi-package", "flask", "==2.3.0", 2],
-  ["pypi-package", "flask", "", 3],
-  ["npm-package", "left-pad", "", 4],
-  ["github-action", "actions/checkout", "v4", 9],
-];
+const VARIANTS = [[7, "18.2.0", 5], [7, "17.0.2", 2]];
 
 const initSqlJs = require("sql.js");
 const SQL = await initSqlJs();
 const db = new SQL.Database();
 db.run(`
-  CREATE TABLE result (target TEXT NOT NULL, value TEXT NOT NULL, valid INTEGER NOT NULL,
-    source TEXT NOT NULL, category TEXT, repository TEXT, path TEXT,
-    occurrences INTEGER NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
-    PRIMARY KEY (target, value));
-  CREATE TABLE result_location (target TEXT NOT NULL, value TEXT NOT NULL, repository TEXT NOT NULL,
-    path TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
-    PRIMARY KEY (target, value, repository, path));
-  CREATE TABLE validity_cache (target TEXT NOT NULL, value TEXT NOT NULL, valid INTEGER NOT NULL,
-    checked_at TEXT NOT NULL, PRIMARY KEY (target, value));
+  CREATE TABLE node (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', key TEXT NOT NULL,
+    label TEXT, category TEXT, valid INTEGER, platform TEXT, props TEXT,
+    popularity INTEGER, last_counted TEXT, last_enriched TEXT,
+    severity REAL NOT NULL DEFAULT 0, severity_band TEXT NOT NULL DEFAULT 'LOW',
+    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+    UNIQUE(type, target, key));
+  CREATE TABLE edge (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    src INTEGER NOT NULL, dst INTEGER NOT NULL, type TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL DEFAULT 1,
+    severity REAL NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+    UNIQUE(src, dst, type, context));
+  CREATE TABLE node_variant (
+    node_id INTEGER NOT NULL, variant TEXT NOT NULL,
+    sightings INTEGER NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+    PRIMARY KEY (node_id, variant));
   CREATE TABLE pending (source TEXT NOT NULL, target TEXT NOT NULL, query TEXT NOT NULL,
     PRIMARY KEY (source, target, query));
-  CREATE TABLE reference (target TEXT NOT NULL, value TEXT NOT NULL, registry TEXT, category TEXT,
-    popularity INTEGER, sightings INTEGER NOT NULL DEFAULT 0, first_seen TEXT NOT NULL,
-    last_seen TEXT NOT NULL, last_counted TEXT, PRIMARY KEY (target, value));
-  CREATE TABLE reference_variant (target TEXT NOT NULL, value TEXT NOT NULL, variant TEXT NOT NULL,
-    sightings INTEGER NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
-    PRIMARY KEY (target, value, variant));
-  PRAGMA user_version = 2;
+  PRAGMA user_version = 4;
 `);
-for (const [target, value, valid, category, repository, path, occurrences, seen] of RESULTS) {
-  db.run("INSERT INTO result VALUES (?,?,?,'github',?,?,?,?,?,?)",
-    [target, value, valid, category, repository, path, occurrences, seen, seen]);
+for (const [type, target, key, label, category, valid, platform, props, popularity, severity, band, seen]
+  of NODES) {
+  db.run(`INSERT INTO node
+      (type,target,key,label,category,valid,platform,props,popularity,severity,severity_band,
+       first_seen,last_seen)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [type, target, key, label, category, valid, platform, props, popularity, severity, band, seen, D3]);
 }
-for (const [target, value, repository, path, seen] of LOCATIONS) {
-  db.run("INSERT INTO result_location VALUES (?,?,?,?,?,?)", [target, value, repository, path, seen, seen]);
+for (const [src, dst, type, context, weight, severity] of EDGES) {
+  db.run("INSERT INTO edge (src,dst,type,context,weight,severity,first_seen,last_seen) VALUES (?,?,?,?,?,?,?,?)",
+    [src, dst, type, context, weight, severity, D1, D3]);
 }
-for (const [target, value, registry, category, popularity, sightings] of REFERENCES) {
-  db.run("INSERT INTO reference VALUES (?,?,?,?,?,?,?,?,?)",
-    [target, value, registry, category, popularity, sightings, D1, D3, D3]);
-}
-for (const [target, value, variant, sightings] of VARIANTS) {
-  db.run("INSERT INTO reference_variant VALUES (?,?,?,?,?,?)", [target, value, variant, sightings, D1, D3]);
+for (const [nodeId, variant, sightings] of VARIANTS) {
+  db.run("INSERT INTO node_variant VALUES (?,?,?,?,?)", [nodeId, variant, sightings, D1, D3]);
 }
 for (let index = 0; index < 5; index += 1) {
   db.run("INSERT INTO pending VALUES ('github','github-token',?)", [`q${index}`]);
@@ -105,4 +92,4 @@ for (let index = 0; index < 5; index += 1) {
 mkdirSync(join(root, "scratch"), { recursive: true });
 writeFileSync(join(root, "scratch", "fixture.db"), Buffer.from(db.export()));
 db.close();
-console.log("wrote scratch/fixture.db");
+console.log("wrote scratch/fixture.db (schema v4, 9 nodes, 10 edges)");

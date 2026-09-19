@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:public": "tsc --noEmit && node scripts/build-summary.mjs && node scripts/assert-public-safe.mjs && vite build",
-    "build:private": "tsc --noEmit && node scripts/build-summary.mjs private && vite build --mode private",
+    "build:public": "tsc --noEmit && node scripts/build-graph.mjs && node scripts/assert-public-safe.mjs && vite build",
+    "build:private": "tsc --noEmit && node scripts/build-graph.mjs private && vite build --mode private",
+    "graph": "node scripts/build-graph.mjs",
+    "test": "node scripts/make-fixture.mjs && node --test \"test/*.test.mjs\"",
     "fixture": "node scripts/make-fixture.mjs",
     "check:summary": "node scripts/make-fixture.mjs && node scripts/check-summary.mjs",
     "check:safe": "node scripts/assert-public-safe.mjs",

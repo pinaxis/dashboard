@@ -5,6 +5,7 @@ dist
 
 public/pinaxis.db
 public/summary.json
+public/graph.json
 
 # Committing this would make every published pseudonym reversible
 .anon-salt
