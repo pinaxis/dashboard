@@ -11,6 +11,7 @@ const RELATION_LABEL: Record<string, string> = {
   CO_MAINTAINS: "co-maintains",
   HOSTED_ON: "hosted on",
   CONTAINS: "contains",
+  FOLLOWS: "follows",
 };
 
 function visitLink(document: GraphDocument, index: number): { url: string; label: string } | null {

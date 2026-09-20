@@ -8,7 +8,8 @@ export type EdgeType =
   | "MAINTAINS"
   | "CO_MAINTAINS"
   | "HOSTED_ON"
-  | "CONTAINS";
+  | "CONTAINS"
+  | "FOLLOWS";
 
 interface BaseNode {
   type: NodeType;
