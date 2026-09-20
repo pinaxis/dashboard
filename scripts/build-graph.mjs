@@ -30,21 +30,20 @@ function dataset() {
   return { tag: `dataset-v${schemaVersion}`, schemaVersion };
 }
 
-function fetchDatabase(tag) {
-  if (process.env.PINAXIS_DB) {
-    return { path: resolve(process.env.PINAXIS_DB), dir: null };
-  }
-  const dir = mkdtempSync(join(tmpdir(), "pinaxis-"));
-  execFileSync("gh",
-    ["release", "download", tag, "--repo", REPO, "--pattern", "pinaxis.db", "--dir", dir, "--clobber"],
-    { stdio: "inherit" });
-  return { path: join(dir, "pinaxis.db"), dir };
-}
-
-const { tag, schemaVersion } = dataset();
 const salt = loadSalt({ root });
-const { path, dir } = fetchDatabase(tag);
+const { tag, schemaVersion } = dataset();
+let dir = null;
 try {
+  let path;
+  if (process.env.PINAXIS_DB) {
+    path = resolve(process.env.PINAXIS_DB);
+  } else {
+    dir = mkdtempSync(join(tmpdir(), "pinaxis-"));
+    execFileSync("gh",
+      ["release", "download", tag, "--repo", REPO, "--pattern", "pinaxis.db", "--dir", dir, "--clobber"],
+      { stdio: "inherit" });
+    path = join(dir, "pinaxis.db");
+  }
   const initSqlJs = require("sql.js");
   const SQL = await initSqlJs();
   const db = new SQL.Database(readFileSync(path));
