@@ -11,7 +11,6 @@
     "graph": "node scripts/build-graph.mjs",
     "test": "node scripts/make-fixture.mjs && node --test \"test/*.test.mjs\"",
     "fixture": "node scripts/make-fixture.mjs",
-    "check:summary": "node scripts/make-fixture.mjs && node scripts/check-summary.mjs",
     "check:safe": "node scripts/assert-public-safe.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
