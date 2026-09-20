@@ -9,7 +9,6 @@ const D1 = "2026-09-14T10:00:00Z";
 const D2 = "2026-09-15T10:00:00Z";
 const D3 = "2026-09-16T10:00:00Z";
 
-// type, target, key, label, category, valid, platform, props, popularity, severity, band, seen
 const NODES = [
   ["SECRET", "github-token", "ghp_aaaaaaaaaaaabbbb", null, "credentials", 0, "github",
     '{"validated":true,"weight":2}', null, 60, "MEDIUM", D1],

@@ -11,6 +11,7 @@ jobs:
     with:
       node_install: npm ci
       checks: |
+        npm test
         npm run build:public
       command: deploy
     secrets:

@@ -66,7 +66,7 @@ test("rejects a real owner name", () => {
 
 test("rejects a secret that carries a value", () => {
   const poisoned = clean();
-  poisoned.nodes[0].value = "gho_rQ…••••";
+  poisoned.nodes[0].value = "••••";
   assert.throws(() => assertPublicSafe(poisoned), /SECRET/);
 });
 
