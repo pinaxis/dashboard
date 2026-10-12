@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:public": "tsc --noEmit && node scripts/build-graph.mjs && node scripts/assert-public-safe.mjs && vite build",
-    "build:private": "npm run typecheck && node scripts/build-graph.mjs private && vite build --mode private && node scripts/assert-private-scoped.mjs",
+    "build:private": "npm run typecheck && node scripts/build-graph.mjs private && node scripts/assert-private-only-data.mjs",
     "graph": "node scripts/build-graph.mjs",
     "test": "node scripts/make-fixture.mjs && node --test \"test/**/*.test.mjs\"",
     "fixture": "node scripts/make-fixture.mjs",
@@ -18,7 +18,7 @@
     "check:safe": "node scripts/assert-public-safe.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
-    "check:scoped": "node scripts/assert-private-scoped.mjs",
+    "check:private": "node scripts/assert-private-only-data.mjs",
     "deploy:public": "npm run build:public && wrangler deploy",
     "deploy:private": "npm run build:private && wrangler deploy --config wrangler.private.toml"
   },
