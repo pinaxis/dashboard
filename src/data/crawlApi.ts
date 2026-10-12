@@ -2,7 +2,7 @@ import type { CrawlStatus, StartInputs } from "../../worker/github.ts";
 
 export type { CrawlStatus, StartInputs };
 
-const BASE = "/private/api/crawl";
+const BASE = "/api/crawl";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, { credentials: "same-origin", ...init });
