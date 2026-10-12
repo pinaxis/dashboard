@@ -41,8 +41,8 @@ async function findKey(kid: string, config: AccessConfig): Promise<CryptoKey | n
 }
 
 /**
- * @remarks Access already gates /private* at the edge; this re-check keeps the crawl controls closed
- * if the route or the Access application ever drifts away from each other.
+ * @remarks Access already gates /login and /api/* at the edge; this re-check keeps the private graph
+ * and the crawl controls closed if the routes and the Access application ever drift apart.
  */
 export async function verifyAccess(token: string | null, config: AccessConfig): Promise<boolean> {
   const parts = token?.split(".") ?? [];
