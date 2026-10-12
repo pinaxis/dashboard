@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { isExtensionLabel } from "./lib/paths.mjs";
 
 const PSEUDONYM = /^(repo|owner)-[0-9a-f]{8}$/;
+const PLATFORM_SLUG = /^[a-z][a-z0-9-]{0,31}$/;
 const PSEUDONYMOUS_TYPES = new Set(["REPOSITORY", "OWNER"]);
 const FORBIDDEN_EDGES = new Set(["MAINTAINS", "CO_MAINTAINS", "FOLLOWS"]);
 const SECRET_BEARING_FIELDS = ["key", "label", "value"];
@@ -27,7 +28,8 @@ const PACKAGE_COLLIDING_MARKER = "sk-";
  * stat is only publishable when the public document draws at least one node of its type.
  */
 function assertStatsShowOnlyWhatIsDrawn(document) {
-  const stats = document.stats ?? {};
+  assert.ok(document.stats !== null && typeof document.stats === "object", "a public graph must carry stats");
+  const stats = document.stats;
   const nodeCounts = stats.nodes ?? {};
   const edgeCounts = stats.edges ?? {};
   assert.ok(!("MAINTAINER" in nodeCounts), "public stats must not count MAINTAINER nodes");
@@ -54,6 +56,9 @@ export function assertPublicSafe(document) {
     if (PSEUDONYMOUS_TYPES.has(node.type)) {
       assert.match(node.label, PSEUDONYM,
         `a public ${node.type} label must be a pseudonym, got ${node.label}`);
+    }
+    if (node.type === "PLATFORM") {
+      assert.match(node.label, PLATFORM_SLUG, `a public PLATFORM label must be a short slug, got ${node.label}`);
     }
     if (node.type === "FILE") {
       assert.ok(!("path" in node), "a public FILE node must not carry path");
