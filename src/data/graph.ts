@@ -17,6 +17,8 @@ interface BaseNode {
   band: Band;
   firstSeen: string;
   lastSeen: string;
+  x?: number;
+  y?: number;
 }
 
 export interface SecretNode extends BaseNode {

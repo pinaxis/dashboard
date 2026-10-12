@@ -1,6 +1,6 @@
 import { extensionOf } from "./paths.mjs";
 
-const PUBLIC_EDGE_TYPES = new Set(["LEAKED_IN", "USED_IN", "OWNED_BY"]);
+const PUBLIC_EDGE_TYPES = new Set(["LEAKED_IN", "USED_IN", "OWNED_BY", "CONTAINS", "HOSTED_ON"]);
 const PATH_BEARING_EDGES = new Set(["LEAKED_IN", "USED_IN"]);
 const PSEUDONYM_PREFIX = { REPOSITORY: "repo", OWNER: "owner" };
 
@@ -81,17 +81,91 @@ function credentials(db) {
       validatedDead: row.validatedDead, formatOnly: row.formatOnly }));
 }
 
-function counted(rows) {
+function tally(items, keyOf) {
   const out = {};
-  for (const row of rows) {
-    out[row.type] = row.total;
+  for (const item of items) {
+    out[keyOf(item)] = (out[keyOf(item)] ?? 0) + 1;
   }
   return out;
+}
+
+const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const earliest = (a, b) => (b < a ? b : a);
+const latest = (a, b) => (b > a ? b : a);
+const fileKey = (repository, path) => `${repository}\u0000${path}`;
+
+function isFiled(row) {
+  return PATH_BEARING_EDGES.has(row.type) && row.context !== "";
+}
+
+function deriveFiles(edgeRows) {
+  const byKey = new Map();
+  for (const row of edgeRows.filter(isFiled)) {
+    const key = fileKey(row.dst, row.context);
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, repository: row.dst, path: row.context, incoming: [] });
+    }
+    byKey.get(key).incoming.push(row);
+  }
+  return [...byKey.values()]
+    .sort((a, b) => a.repository - b.repository || compareText(a.path, b.path));
+}
+
+function emitFile(file, { isPublic, rowsById }) {
+  const worst = file.incoming.reduce((a, b) => (b.severity > a.severity ? b : a));
+  const sources = file.incoming.map((row) => rowsById.get(row.src));
+  const node = {
+    type: "FILE",
+    severity: worst.severity,
+    band: rowsById.get(worst.src).severity_band,
+    firstSeen: sources.map((row) => row.first_seen).reduce(earliest),
+    lastSeen: sources.map((row) => row.last_seen).reduce(latest),
+    label: isPublic ? extensionOf(file.path) : file.path,
+  };
+  return isPublic ? node : { ...node, path: file.path };
+}
+
+function derivePlatforms(rows) {
+  const byName = new Map();
+  for (const row of rows.filter((candidate) => candidate.type === "REPOSITORY" && candidate.platform)) {
+    if (!byName.has(row.platform)) {
+      byName.set(row.platform, []);
+    }
+    byName.get(row.platform).push(row);
+  }
+  if (byName.size < 2) {
+    return [];
+  }
+  return [...byName.entries()]
+    .sort(([a], [b]) => compareText(a, b))
+    .map(([name, repositories]) => ({ name, repositories }));
+}
+
+function emitPlatform(platform) {
+  return {
+    type: "PLATFORM",
+    severity: 0,
+    band: "LOW",
+    firstSeen: platform.repositories.map((row) => row.first_seen).reduce(earliest),
+    lastSeen: platform.repositories.map((row) => row.last_seen).reduce(latest),
+    label: platform.name,
+  };
+}
+
+function emitEdge(row, { isPublic, indexById, fileIndex }) {
+  const edge = { s: indexById.get(row.src), t: indexById.get(row.dst), type: row.type,
+    weight: row.weight, severity: row.severity };
+  if (isFiled(row)) {
+    return { ...edge, t: fileIndex.get(fileKey(row.dst, row.context)) };
+  }
+  return isPublic || row.context === "" ? edge : { ...edge, context: row.context };
 }
 
 /**
  * @implNote the disclosure rules are applied while building rather than by stripping a finished
  * document, so a public build never holds a private field in memory to forget to remove.
+ * @remarks stats are tallied from the emitted arrays, so a public build cannot publish the size of
+ * anything it hides (see the 2026-10-12 export spec, which retired "stats identical in both modes").
  */
 export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
   const isPublic = mode === "public";
@@ -102,7 +176,21 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
   const rows = all(db, "SELECT * FROM node ORDER BY id")
     .filter((row) => !(isPublic && row.type === "MAINTAINER"));
   const indexById = new Map(rows.map((row, index) => [row.id, index]));
-  const nodes = rows.map((row) => emitNode(row, { isPublic, pseudonym, maintainerCounts }));
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+
+  const edgeRows = all(db, "SELECT * FROM edge ORDER BY id")
+    .filter((row) => !isPublic || PUBLIC_EDGE_TYPES.has(row.type))
+    .filter((row) => indexById.has(row.src) && indexById.has(row.dst));
+  const files = deriveFiles(edgeRows);
+  const fileIndex = new Map(files.map((file, offset) => [file.key, rows.length + offset]));
+  const platforms = derivePlatforms(rows);
+  const platformStart = rows.length + files.length;
+
+  const nodes = [
+    ...rows.map((row) => emitNode(row, { isPublic, pseudonym, maintainerCounts })),
+    ...files.map((file) => emitFile(file, { isPublic, rowsById })),
+    ...platforms.map(emitPlatform),
+  ];
 
   if (isPublic) {
     const pseudonymous = nodes.filter((node) => node.type === "REPOSITORY" || node.type === "OWNER");
@@ -112,40 +200,28 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
     }
   }
 
-  const edges = all(db, "SELECT * FROM edge ORDER BY id")
-    .filter((row) => !isPublic || PUBLIC_EDGE_TYPES.has(row.type))
-    .filter((row) => indexById.has(row.src) && indexById.has(row.dst))
-    .map((row) => {
-      const edge = { s: indexById.get(row.src), t: indexById.get(row.dst), type: row.type,
-        weight: row.weight, severity: row.severity };
-      if (row.context === "") {
-        return edge;
-      }
-      if (isPublic && !PATH_BEARING_EDGES.has(row.type)) {
-        return edge;
-      }
-      const context = isPublic && PATH_BEARING_EDGES.has(row.type)
-        ? extensionOf(row.context) : row.context;
-      return { ...edge, context };
-    });
+  const edges = [
+    ...edgeRows.map((row) => emitEdge(row, { isPublic, indexById, fileIndex })),
+    ...files.map((file) => {
+      const t = fileIndex.get(file.key);
+      return { s: indexById.get(file.repository), t, type: "CONTAINS", weight: 1, severity: nodes[t].severity };
+    }),
+    ...platforms.flatMap((platform, offset) => platform.repositories.map((row) => ({
+      s: indexById.get(row.id), t: platformStart + offset, type: "HOSTED_ON", weight: 1, severity: 0 }))),
+  ];
 
-  const [latest] = all(db, "SELECT MAX(last_seen) AS ts FROM node");
-  const bands = {};
-  for (const row of all(db, "SELECT severity_band AS band, COUNT(*) AS total FROM node GROUP BY band")) {
-    bands[row.band] = row.total;
-  }
   return {
     mode,
     schema: schemaVersion,
     nodes,
     edges,
     stats: {
-      nodes: counted(all(db, "SELECT type, COUNT(*) AS total FROM node GROUP BY type")),
-      edges: counted(all(db, "SELECT type, COUNT(*) AS total FROM edge GROUP BY type")),
-      bands,
+      nodes: tally(nodes, (node) => node.type),
+      edges: tally(edges, (edge) => edge.type),
+      bands: tally(nodes, (node) => node.band),
       credentials: credentials(db),
       coOccurrence: coOccurrence(db),
-      lastSeen: latest.ts ?? null,
+      lastSeen: nodes.length === 0 ? null : nodes.map((node) => node.lastSeen).reduce(latest),
     },
   };
 }

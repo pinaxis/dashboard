@@ -2,6 +2,7 @@ const CONFIG_FILENAMES = new Set([".env", ".npmrc", ".netrc", ".pypirc", ".docke
   ".pgpass", ".replit"]);
 const EXTENSION_SHAPE = /^\.[a-z0-9][a-z0-9.+-]{0,15}$/;
 const OTHER_EXTENSION = "(other)";
+const NO_EXTENSION = "(no extension)";
 
 /**
  * @remarks the input is a path from a stranger's repository, so nothing may pass through unchecked: a
@@ -14,11 +15,16 @@ export function extensionOf(path) {
   const base = path.split(/[\\/]/).pop().toLowerCase();
   const dot = base.lastIndexOf(".");
   if (dot < 0) {
-    return "(no extension)";
+    return NO_EXTENSION;
   }
   if (dot === 0) {
     return CONFIG_FILENAMES.has(base) ? base : OTHER_EXTENSION;
   }
   const extension = base.slice(dot);
   return EXTENSION_SHAPE.test(extension) ? extension : OTHER_EXTENSION;
+}
+
+export function isExtensionLabel(label) {
+  return CONFIG_FILENAMES.has(label) || EXTENSION_SHAPE.test(label)
+    || label === OTHER_EXTENSION || label === NO_EXTENSION;
 }

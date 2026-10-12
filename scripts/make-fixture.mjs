@@ -39,6 +39,9 @@ const EDGES = [
   [8, 4, "MAINTAINS", "", 120, 90],
   [9, 4, "MAINTAINS", "", 30, 90],
   [8, 9, "CO_MAINTAINS", "github:acme/api", 1, 90],
+  [2, 4, "LEAKED_IN", "src/config/.env", 1, 90],
+  [3, 5, "LEAKED_IN", "", 1, 40],
+  [8, 9, "FOLLOWS", "", 1, 0],
 ];
 
 const VARIANTS = [[7, "18.2.0", 5], [7, "17.0.2", 2]];
@@ -91,4 +94,4 @@ for (let index = 0; index < 5; index += 1) {
 mkdirSync(join(root, "scratch"), { recursive: true });
 writeFileSync(join(root, "scratch", "fixture.db"), Buffer.from(db.export()));
 db.close();
-console.log("wrote scratch/fixture.db (schema v4, 9 nodes, 10 edges)");
+console.log("wrote scratch/fixture.db (schema v4, 9 nodes, 13 edges)");

@@ -1,5 +1,6 @@
 import type { GraphDocument, PackageNode } from "../data/graph";
 import { nodeName } from "../data/graph";
+import { leaksPerRepository } from "../data/exposure";
 import { BAND_ORDER, BAND_COLOR, TYPE_COLOR, STATUS, SERIES, INK } from "../lib/palette";
 import { compactNumber } from "../lib/format";
 
@@ -76,15 +77,7 @@ function Credentials({ document }: { document: GraphDocument }) {
 }
 
 function topExposedRepositories(document: GraphDocument): Bar[] {
-  const leaks = new Map<number, number>();
-  for (const edge of document.edges) {
-    if (edge.type !== "LEAKED_IN") {
-      continue;
-    }
-    const repository = document.nodes[edge.t]?.type === "REPOSITORY" ? edge.t : edge.s;
-    leaks.set(repository, (leaks.get(repository) ?? 0) + 1);
-  }
-  return [...leaks.entries()]
+  return [...leaksPerRepository(document).entries()]
     .map(([index, count]) => ({ node: document.nodes[index], count }))
     .filter((entry) => entry.node?.type === "REPOSITORY")
     .sort((a, b) => b.count - a.count)

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extensionOf } from "../scripts/lib/paths.mjs";
+import { extensionOf, isExtensionLabel } from "../scripts/lib/paths.mjs";
 
 test("reduces an ordinary path to its extension", () => {
   assert.equal(extensionOf("src/config/app.js"), ".js");
@@ -30,5 +30,18 @@ test("never returns a path separator", () => {
   for (const path of ["src/config/.env", "deep\\win\\notes.txt", "a/b/c"]) {
     const reduced = extensionOf(path);
     assert.ok(!reduced.includes("/") && !reduced.includes("\\"), `leaked a separator: ${reduced}`);
+  }
+});
+
+test("every reduction extensionOf produces is recognised as an extension label", () => {
+  for (const path of ["src/config/app.js", "src/config/.env", ".aws-credentials-jdoe",
+    "deep\win\notes.txt", "deep\win\v1.2\dist\config", "x.ThisIsWayTooLongToBeAnExtension"]) {
+    assert.ok(isExtensionLabel(extensionOf(path)), `${extensionOf(path)} was not recognised`);
+  }
+});
+
+test("a path or a bare file name is not an extension label", () => {
+  for (const label of ["src/config/.env", "deep\win\notes.txt", "notes.txt", ".aws-credentials-jdoe", ""]) {
+    assert.ok(!isExtensionLabel(label), `${label} passed as an extension`);
   }
 });

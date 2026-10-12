@@ -1,8 +1,8 @@
-import Graph from "graphology";
-import forceAtlas2 from "graphology-layout-forceatlas2";
+import type Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
 import { nodeName } from "../data/graph";
 import { BAND_COLOR, TYPE_COLOR, INK } from "../lib/palette";
+import { hasStoredLayout, settle, topology } from "./settle";
 
 const MIN_SIZE = 2.5;
 const MAX_SIZE = 30;
@@ -35,26 +35,12 @@ function rank(graph: Graph): void {
   ranked.slice(0, ALWAYS_LABEL).forEach((node) => graph.setNodeAttribute(node, "forceLabel", true));
 }
 
-function settle(graph: Graph): void {
-  const settings = forceAtlas2.inferSettings(graph);
-  forceAtlas2.assign(graph, {
-    iterations: 500,
-    settings: {
-      ...settings,
-      linLogMode: true,
-      outboundAttractionDistribution: true,
-      gravity: 1,
-      scalingRatio: 10,
-      barnesHutOptimize: graph.order > 200,
-    },
-  });
-}
-
 export function buildScene(document: GraphDocument): Graph {
-  const graph = new Graph();
+  const graph = topology(document);
+  const stored = hasStoredLayout(document);
 
   document.nodes.forEach((node, index) => {
-    graph.addNode(String(index), {
+    graph.mergeNodeAttributes(String(index), {
       label: nodeName(node),
       nodeType: node.type,
       band: node.band,
@@ -62,28 +48,15 @@ export function buildScene(document: GraphDocument): Graph {
       severity: node.severity,
       color: BAND_COLOR[node.band] ?? INK.muted,
       borderColor: TYPE_COLOR[node.type] ?? INK.muted,
-      x: Math.cos(index) * (1 + (index % 7)),
-      y: Math.sin(index) * (1 + (index % 5)),
       size: MIN_SIZE,
+      ...(stored ? { x: node.x, y: node.y } : {}),
     });
   });
-
-  const drawn = new Set<string>();
-  document.edges.forEach((edge) => {
-    if (edge.s === edge.t) {
-      return;
-    }
-    const from = Math.min(edge.s, edge.t);
-    const to = Math.max(edge.s, edge.t);
-    const key = `${from}-${to}`;
-    if (drawn.has(key) || !graph.hasNode(String(from)) || !graph.hasNode(String(to))) {
-      return;
-    }
-    drawn.add(key);
-    graph.addEdge(String(edge.s), String(edge.t), { size: 0.9, color: EDGE_COLOR, edgeType: edge.type });
-  });
+  graph.forEachEdge((edge) => graph.mergeEdgeAttributes(edge, { size: 0.9, color: EDGE_COLOR }));
 
   rank(graph);
-  settle(graph);
+  if (!stored) {
+    settle(graph);
+  }
   return graph;
 }
