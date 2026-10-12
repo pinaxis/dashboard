@@ -31,14 +31,20 @@ function Bars({ title, items, color }: { title: string; items: { label: string; 
 function CategoryGraph({ document }: { document: PublicDocument }) {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!container.current) {
+    if (!container.current || document.nodes.length === 0) {
       return undefined;
     }
-    const graph = buildCategoryScene(document);
-    const sigma = new Sigma(graph, container.current, { defaultEdgeColor: "#2b2a27", renderEdgeLabels: false });
-    return () => sigma.kill();
+    let sigma: Sigma | null = null;
+    try {
+      const graph = buildCategoryScene(document);
+      sigma = new Sigma(graph, container.current, { defaultEdgeColor: "#2b2a27", renderEdgeLabels: false });
+    } catch (failure) {
+      // A rendering failure must not blank the aggregates, which are the point of this page.
+      console.error("category graph failed to render", failure);
+    }
+    return () => sigma?.kill();
   }, [document]);
-  return <div className="stage-canvas" ref={container} />;
+  return <div className="category-canvas" ref={container} />;
 }
 
 export function PublicDashboard({ document }: { document: PublicDocument }) {

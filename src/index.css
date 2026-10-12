@@ -188,6 +188,12 @@ body {
   inset: 0;
 }
 
+.category-canvas {
+  position: relative;
+  width: 100%;
+  height: 420px;
+}
+
 .graph-controls {
   position: absolute;
   left: 1rem;
