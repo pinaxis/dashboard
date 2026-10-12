@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { loadSalt, createPseudonymizer } from "./lib/anonymize.mjs";
 import { buildGraph } from "./lib/graph.mjs";
+import { buildCrawl } from "./lib/crawl.mjs";
 import { withLayout } from "./lib/layout.mjs";
 
 const require = createRequire(import.meta.url);
@@ -31,6 +32,19 @@ function dataset() {
   return { tag: `dataset-v${schemaVersion}`, schemaVersion };
 }
 
+const WORKFLOWS = { scan: "scan.yml", resume: "resume.yml" };
+
+function gh(args) {
+  return JSON.parse(execFileSync("gh", args, { encoding: "utf8" }));
+}
+
+function crawlRuns(since) {
+  return Object.entries(WORKFLOWS).flatMap(([workflow, file]) =>
+    gh(["run", "list", "--repo", REPO, "--workflow", file, "--limit", "50", "--json", "createdAt,conclusion,url"])
+      .filter((entry) => Date.parse(entry.createdAt) >= Date.parse(since))
+      .map((entry) => ({ at: entry.createdAt, workflow, conclusion: entry.conclusion || null, url: entry.url })));
+}
+
 const salt = loadSalt({ root });
 const { tag, schemaVersion } = dataset();
 let dir = null;
@@ -53,6 +67,10 @@ try {
     pseudonym: createPseudonymizer(salt, schemaVersion),
     schemaVersion,
   });
+  if (MODE === "private") {
+    const { createdAt: since } = gh(["release", "view", tag, "--repo", REPO, "--json", "createdAt"]);
+    graph.crawl = buildCrawl(db, { dataset: tag, since, runs: crawlRuns(since) });
+  }
   db.close();
   const document = withLayout({ ...graph, dataset: tag, generatedAt: new Date().toISOString() });
   rmSync(join(root, "public", "pinaxis.db"), { force: true });
