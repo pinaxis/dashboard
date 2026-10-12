@@ -1,8 +1,4 @@
-import { extensionOf } from "./paths.mjs";
-
-const PUBLIC_EDGE_TYPES = new Set(["LEAKED_IN", "USED_IN", "OWNED_BY", "CONTAINS", "HOSTED_ON"]);
 const PATH_BEARING_EDGES = new Set(["LEAKED_IN", "USED_IN"]);
-const PSEUDONYM_PREFIX = { REPOSITORY: "repo", OWNER: "owner" };
 
 export function all(db, sql) {
   const statement = db.prepare(sql);
@@ -27,7 +23,7 @@ function parsedProps(row) {
   }
 }
 
-function emitNode(row, { isPublic, pseudonym, maintainerCounts }) {
+function emitNode(row, { maintainerCounts }) {
   const base = {
     type: row.type,
     severity: row.severity,
@@ -39,20 +35,16 @@ function emitNode(row, { isPublic, pseudonym, maintainerCounts }) {
     const props = parsedProps(row);
     const secret = { ...base, target: row.target, category: row.category,
       valid: row.valid === 1, validated: props.validated === true };
-    return isPublic ? secret : { ...secret, value: maskSecret(row.key) };
+    return { ...secret, value: maskSecret(row.key) };
   }
   if (row.type === "REPOSITORY" || row.type === "OWNER") {
-    const label = isPublic ? pseudonym(PSEUDONYM_PREFIX[row.type], row.key) : row.label;
-    const named = { ...base, label };
+    const named = { ...base, label: row.label };
     return row.type === "REPOSITORY"
       ? { ...named, maintainers: maintainerCounts.get(row.id) ?? 0 }
       : named;
   }
   if (row.type === "PACKAGE") {
     return { ...base, target: row.target, label: row.label, popularity: row.popularity };
-  }
-  if (isPublic) {
-    throw new Error(`unhandled node type in a public build: ${row.type}`);
   }
   return { ...base, label: row.label };
 }
@@ -111,18 +103,18 @@ function deriveFiles(edgeRows) {
     .sort((a, b) => a.repository - b.repository || compareText(a.path, b.path));
 }
 
-function emitFile(file, { isPublic, rowsById }) {
+function emitFile(file, { rowsById }) {
   const worst = file.incoming.reduce((a, b) => (b.severity > a.severity ? b : a));
   const sources = file.incoming.map((row) => rowsById.get(row.src));
-  const node = {
+  return {
     type: "FILE",
     severity: worst.severity,
     band: rowsById.get(worst.src).severity_band,
     firstSeen: sources.map((row) => row.first_seen).reduce(earliest),
     lastSeen: sources.map((row) => row.last_seen).reduce(latest),
-    label: isPublic ? extensionOf(file.path) : file.path,
+    label: file.path,
+    path: file.path,
   };
-  return isPublic ? node : { ...node, path: file.path };
 }
 
 function derivePlatforms(rows) {
@@ -152,34 +144,29 @@ function emitPlatform(platform) {
   };
 }
 
-function emitEdge(row, { isPublic, indexById, fileIndex }) {
+function emitEdge(row, { indexById, fileIndex }) {
   const edge = { s: indexById.get(row.src), t: indexById.get(row.dst), type: row.type,
     weight: row.weight, severity: row.severity };
   if (isFiled(row)) {
     return { ...edge, t: fileIndex.get(fileKey(row.dst, row.context)) };
   }
-  return isPublic || row.context === "" ? edge : { ...edge, context: row.context };
+  return row.context === "" ? edge : { ...edge, context: row.context };
 }
 
 /**
- * @implNote the disclosure rules are applied while building rather than by stripping a finished
- * document, so a public build never holds a private field in memory to forget to remove.
- * @remarks stats are tallied from the emitted arrays, so a public build cannot publish the size of
- * anything it hides (see the 2026-10-12 export spec, which retired "stats identical in both modes").
+ * @remarks builds the private document only. Public disclosure lives entirely in `buildPublicGraph`
+ * (aggregates only) and the public gate, so there is no second public path here to drift.
  */
-export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
-  const isPublic = mode === "public";
+export function buildGraph(db, { schemaVersion }) {
   const maintainerCounts = new Map(
     all(db, "SELECT dst, COUNT(*) AS total FROM edge WHERE type='MAINTAINS' GROUP BY dst")
       .map((row) => [row.dst, row.total]));
 
-  const rows = all(db, "SELECT * FROM node ORDER BY id")
-    .filter((row) => !(isPublic && row.type === "MAINTAINER"));
+  const rows = all(db, "SELECT * FROM node ORDER BY id");
   const indexById = new Map(rows.map((row, index) => [row.id, index]));
   const rowsById = new Map(rows.map((row) => [row.id, row]));
 
   const edgeRows = all(db, "SELECT * FROM edge ORDER BY id")
-    .filter((row) => !isPublic || PUBLIC_EDGE_TYPES.has(row.type))
     .filter((row) => indexById.has(row.src) && indexById.has(row.dst));
   const files = deriveFiles(edgeRows);
   const fileIndex = new Map(files.map((file, offset) => [file.key, rows.length + offset]));
@@ -187,21 +174,13 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
   const platformStart = rows.length + files.length;
 
   const nodes = [
-    ...rows.map((row) => emitNode(row, { isPublic, pseudonym, maintainerCounts })),
-    ...files.map((file) => emitFile(file, { isPublic, rowsById })),
+    ...rows.map((row) => emitNode(row, { maintainerCounts })),
+    ...files.map((file) => emitFile(file, { rowsById })),
     ...platforms.map(emitPlatform),
   ];
 
-  if (isPublic) {
-    const pseudonymous = nodes.filter((node) => node.type === "REPOSITORY" || node.type === "OWNER");
-    const labels = pseudonymous.map((node) => node.label);
-    if (new Set(labels).size !== labels.length) {
-      throw new Error("pseudonym collision: two nodes share a label, refusing to merge two entities");
-    }
-  }
-
   const edges = [
-    ...edgeRows.map((row) => emitEdge(row, { isPublic, indexById, fileIndex })),
+    ...edgeRows.map((row) => emitEdge(row, { indexById, fileIndex })),
     ...files.map((file) => {
       const t = fileIndex.get(file.key);
       return { s: indexById.get(file.repository), t, type: "CONTAINS", weight: 1, severity: nodes[t].severity };
@@ -211,7 +190,7 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
   ];
 
   return {
-    mode,
+    mode: "private",
     schema: schemaVersion,
     nodes,
     edges,

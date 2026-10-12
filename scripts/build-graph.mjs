@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { loadSalt, createPseudonymizer } from "./lib/anonymize.mjs";
 import { buildGraph } from "./lib/graph.mjs";
 import { buildCrawl } from "./lib/crawl.mjs";
 import { withLayout } from "./lib/layout.mjs";
@@ -46,7 +45,6 @@ function crawlRuns(since) {
       .map((entry) => ({ at: entry.createdAt, workflow, conclusion: entry.conclusion || null, url: entry.url })));
 }
 
-const salt = loadSalt({ root });
 const { tag, schemaVersion } = dataset();
 let dir = null;
 try {
@@ -65,7 +63,7 @@ try {
   const db = new SQL.Database(readFileSync(path));
   let graph;
   if (MODE === "private") {
-    graph = buildGraph(db, { mode: MODE, pseudonym: createPseudonymizer(salt, schemaVersion), schemaVersion });
+    graph = buildGraph(db, { schemaVersion });
     const { createdAt: since } = gh(["release", "view", tag, "--repo", REPO, "--json", "createdAt"]);
     graph.crawl = buildCrawl(db, { dataset: tag, since, runs: crawlRuns(since) });
   } else {
