@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "check:private": "node scripts/assert-private-only-data.mjs",
     "deploy:public": "npm run build:public && wrangler deploy",
-    "deploy:private": "npm run build:private && wrangler deploy --config wrangler.private.toml"
+    "deploy:private": "npm run build:private && wrangler deploy --config wrangler.private.toml && node scripts/assert-live-gated.mjs",
+    "check:gated": "node scripts/assert-live-gated.mjs"
   },
   "dependencies": {
     "@sigma/node-border": "^3.0.0",
