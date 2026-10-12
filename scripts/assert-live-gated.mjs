@@ -2,14 +2,16 @@ import { fileURLToPath } from "node:url";
 
 const ORIGIN = "https://pinaxis.intisy.dev";
 const GATED = ["/login", "/api/graph", "/api/crawl", "/private/graph.json"];
+const LEGACY = "/private/graph.json";
 const ACCESS_LOGIN = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com\/cdn-cgi\/access\/login\//;
 
-function isGatedAnswer(response, origin) {
+function isGatedAnswer(path, response, origin) {
   if (response.status === 403) {
     return true;
   }
   const location = response.headers.get("location") ?? "";
-  return response.status === 302 && (ACCESS_LOGIN.test(location) || location === `${origin}/login`);
+  const toLogin = path === LEGACY && location === `${origin}/login`;
+  return response.status === 302 && (ACCESS_LOGIN.test(location) || toLogin);
 }
 
 /**
@@ -21,7 +23,7 @@ export async function checkLiveGated(origin, fetcher) {
   const failures = [];
   for (const path of GATED) {
     const response = await fetcher(`${origin}${path}`, { redirect: "manual" });
-    if (!isGatedAnswer(response, origin)) {
+    if (!isGatedAnswer(path, response, origin)) {
       failures.push(`${path} answered ${response.status} ${response.headers.get("location") ?? ""}`.trim());
     }
   }

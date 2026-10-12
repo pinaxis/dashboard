@@ -49,3 +49,10 @@ test("a public site that stopped serving the public document is a failure", asyn
   assert.equal((await checkLiveGated(ORIGIN, site({ "/graph.json": { status: 200, body: { mode: "private" } } }).fetcher)).length, 1);
   assert.equal((await checkLiveGated(ORIGIN, site({ "/graph.json": { status: 404 } }).fetcher)).length, 1);
 });
+
+test("only the legacy path may redirect to /login; the gated paths must reach Access or refuse", async () => {
+  for (const path of ["/login", "/api/graph", "/api/crawl"]) {
+    const failures = await checkLiveGated(ORIGIN, site({ [path]: { status: 302, location: `${ORIGIN}/login` } }).fetcher);
+    assert.equal(failures.length, 1, path);
+  }
+});
