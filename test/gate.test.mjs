@@ -97,3 +97,11 @@ test("allows a package name that collides with a narrowed marker", () => {
   fine.nodes[3].label = "Flask-Login";
   assert.doesNotThrow(() => assertPublicSafe(fine));
 });
+
+test("rejects either kind of stripe live key", () => {
+  for (const marker of ["sk_live_", "pk_live_"]) {
+    const poisoned = clean();
+    poisoned.stats.coOccurrence.push({ a: `${marker}realkeylooking`, b: "x", repositories: 1 });
+    assert.throws(() => assertPublicSafe(poisoned), new RegExp(marker), `${marker} was allowed through`);
+  }
+});
