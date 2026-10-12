@@ -105,3 +105,9 @@ test("rejects either kind of stripe live key", () => {
     assert.throws(() => assertPublicSafe(poisoned), new RegExp(marker), `${marker} was allowed through`);
   }
 });
+
+test("rejects a follows edge", () => {
+  const poisoned = clean();
+  poisoned.edges.push({ s: 2, t: 2, type: "FOLLOWS", weight: 1, severity: 1 });
+  assert.throws(() => assertPublicSafe(poisoned), /FOLLOWS/);
+});
