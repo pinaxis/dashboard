@@ -47,6 +47,7 @@ test("public omits maintains and co-maintains edges", () => {
   const types = new Set(build("public").edges.map((edge) => edge.type));
   assert.ok(!types.has("MAINTAINS"), "MAINTAINS reached the public graph");
   assert.ok(!types.has("CO_MAINTAINS"), "CO_MAINTAINS reached the public graph");
+  assert.ok(!types.has("FOLLOWS"), "FOLLOWS reached the public graph");
 });
 
 test("private keeps maintains and co-maintains edges", () => {
@@ -218,8 +219,48 @@ test("co-occurrence pairs secret types sharing a repository, and names none", ()
   assert.deepEqual(pairs, [{ a: "github-token", b: "openai-api-key", repositories: 1 }]);
 });
 
-test("stats are identical in both modes, being aggregates", () => {
-  assert.deepEqual(build("public").stats, build("private").stats);
+const tally = (items, keyOf) => items.reduce((out, item) => {
+  out[keyOf(item)] = (out[keyOf(item)] ?? 0) + 1;
+  return out;
+}, {});
+
+test("public stats count exactly the emitted nodes and edges", () => {
+  const graph = build("public");
+  assert.deepEqual(graph.stats.nodes, tally(graph.nodes, (node) => node.type));
+  assert.deepEqual(graph.stats.edges, tally(graph.edges, (edge) => edge.type));
+  assert.deepEqual(graph.stats.bands, tally(graph.nodes, (node) => node.band));
+});
+
+test("public stats name no hidden type", () => {
+  const { stats } = build("public");
+  assert.ok(!("MAINTAINER" in stats.nodes));
+  for (const type of ["MAINTAINS", "CO_MAINTAINS", "FOLLOWS"]) {
+    assert.ok(!(type in stats.edges), `public stats counted ${type}`);
+  }
+});
+
+test("private stats still count maintainers and follows", () => {
+  const { stats } = build("private");
+  assert.equal(stats.nodes.MAINTAINER, 2);
+  assert.equal(stats.edges.FOLLOWS, 1);
+  assert.equal(stats.nodes.FILE, 4);
+  assert.equal(stats.edges.CONTAINS, 4);
+});
+
+test("credential and co-occurrence rollups are the same in both modes", () => {
+  const publicStats = build("public").stats;
+  const privateStats = build("private").stats;
+  assert.deepEqual(publicStats.credentials, privateStats.credentials);
+  assert.deepEqual(publicStats.coOccurrence, privateStats.coOccurrence);
+});
+
+test("lastSeen is the latest sighting among emitted nodes", () => {
+  const graph = build("public");
+  assert.equal(graph.stats.lastSeen, graph.nodes.map((node) => node.lastSeen).sort().at(-1));
+});
+
+test("an empty database reports no lastSeen", () => {
+  assert.equal(buildMini("public", "").stats.lastSeen, null);
 });
 
 const MINI_SCHEMA = `

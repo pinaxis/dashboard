@@ -81,10 +81,10 @@ function credentials(db) {
       validatedDead: row.validatedDead, formatOnly: row.formatOnly }));
 }
 
-function counted(rows) {
+function tally(items, keyOf) {
   const out = {};
-  for (const row of rows) {
-    out[row.type] = row.total;
+  for (const item of items) {
+    out[keyOf(item)] = (out[keyOf(item)] ?? 0) + 1;
   }
   return out;
 }
@@ -164,6 +164,8 @@ function emitEdge(row, { isPublic, indexById, fileIndex }) {
 /**
  * @implNote the disclosure rules are applied while building rather than by stripping a finished
  * document, so a public build never holds a private field in memory to forget to remove.
+ * @remarks stats are tallied from the emitted arrays, so a public build cannot publish the size of
+ * anything it hides (see the 2026-10-12 export spec, which retired "stats identical in both modes").
  */
 export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
   const isPublic = mode === "public";
@@ -208,23 +210,18 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
       s: indexById.get(row.id), t: platformStart + offset, type: "HOSTED_ON", weight: 1, severity: 0 }))),
   ];
 
-  const [latest] = all(db, "SELECT MAX(last_seen) AS ts FROM node");
-  const bands = {};
-  for (const row of all(db, "SELECT severity_band AS band, COUNT(*) AS total FROM node GROUP BY band")) {
-    bands[row.band] = row.total;
-  }
   return {
     mode,
     schema: schemaVersion,
     nodes,
     edges,
     stats: {
-      nodes: counted(all(db, "SELECT type, COUNT(*) AS total FROM node GROUP BY type")),
-      edges: counted(all(db, "SELECT type, COUNT(*) AS total FROM edge GROUP BY type")),
-      bands,
+      nodes: tally(nodes, (node) => node.type),
+      edges: tally(edges, (edge) => edge.type),
+      bands: tally(nodes, (node) => node.band),
       credentials: credentials(db),
       coOccurrence: coOccurrence(db),
-      lastSeen: latest.ts ?? null,
+      lastSeen: nodes.length === 0 ? null : nodes.map((node) => node.lastSeen).reduce(latest),
     },
   };
 }
