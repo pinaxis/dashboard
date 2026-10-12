@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const PSEUDONYM = /^(repo|owner)-[0-9a-f]{8}$/;
 const PSEUDONYMOUS_TYPES = new Set(["REPOSITORY", "OWNER"]);
-const FORBIDDEN_EDGES = new Set(["MAINTAINS", "CO_MAINTAINS"]);
+const FORBIDDEN_EDGES = new Set(["MAINTAINS", "CO_MAINTAINS", "FOLLOWS"]);
 const SECRET_BEARING_FIELDS = ["key", "label", "value"];
 
 const SECRET_MARKERS = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "sk_live_", "pk_live_",
