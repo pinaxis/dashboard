@@ -74,9 +74,13 @@ try {
   }
   db.close();
   // Public day-rounds generatedAt; the gate forbids a clock timestamp anywhere in a public document.
+  // Layout is private only: the public category graph seeds and settles its own positions in the
+  // browser, and a stored x/y would add fields the public gate rejects.
   const now = new Date().toISOString();
-  const generatedAt = MODE === "public" ? now.slice(0, 10) : now;
-  const document = withLayout({ ...graph, dataset: tag, generatedAt });
+  const base = { ...graph, dataset: tag };
+  const document = MODE === "private"
+    ? withLayout({ ...base, generatedAt: now })
+    : { ...base, generatedAt: now.slice(0, 10) };
   rmSync(join(root, "public", "pinaxis.db"), { force: true });
   rmSync(join(root, "public", "summary.json"), { force: true });
   writeFileSync(join(root, "public", "graph.json"), JSON.stringify(document));

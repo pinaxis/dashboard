@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { buildPublicGraph, defaultPolicy } from "../scripts/lib/public.mjs";
+import { assertPublicSafe } from "../scripts/assert-public-safe.mjs";
 
 const require = createRequire(import.meta.url);
 const SQL = await require("sql.js")();
@@ -113,6 +114,13 @@ test("a category edge below weight five is dropped, and a surviving one links it
   const label = (index) => graph.nodes[index].label;
   const pairs = graph.edges.map((edge) => [label(edge.s), label(edge.t)].sort().join(" "));
   assert.ok(pairs.includes(".env openai-api-key"));
+});
+
+test("a populated public document passes the gate on non-empty, aged data", () => {
+  const graph = build();
+  assert.ok(graph.nodes.length > 0, "the aged fixture must produce category nodes");
+  const document = { mode: "public", schema: 5, dataset: "dataset-v5", generatedAt: "2026-09-01", ...graph };
+  assert.doesNotThrow(() => assertPublicSafe(document));
 });
 
 test("a finding leaked into two files counts once per extension, not twice toward one", () => {
