@@ -11,10 +11,8 @@ routes = [
   { pattern = "pinaxis.intisy.dev/private*", zone_name = "intisy.dev" }
 ]
 
-# Set from the Access application before deploying; while blank every /private/api request is a 403.
-[vars]
-ACCESS_TEAM_DOMAIN = ""
-ACCESS_AUD = ""
+# GITHUB_TOKEN, ACCESS_TEAM_DOMAIN and ACCESS_AUD are worker secrets set by the engine's
+# `pinaxis configure`; until they exist every /private/api request is a 403.
 
 # Serves dist-private, whose every file lives under private/, so everything it can serve is something
 # Access protects. scripts/assert-private-scoped.mjs proves that against the build, not the config.
