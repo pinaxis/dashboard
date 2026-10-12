@@ -17,6 +17,8 @@ interface BaseNode {
   band: Band;
   firstSeen: string;
   lastSeen: string;
+  x?: number;
+  y?: number;
 }
 
 export interface SecretNode extends BaseNode {
@@ -102,48 +104,32 @@ export interface Stats {
   lastSeen: string | null;
 }
 
-export interface CrawlTarget {
+export interface CrawlTargetRow {
   target: string;
   discovered: number;
   pending: number;
-  scanned: number;
-  estimated: number;
-  percent: number;
-  lastCompleted: string | null;
+  complete: boolean;
 }
 
-export interface CrawlSource {
+export interface CrawlSourceRow {
   source: string;
-  scanned: number;
-  estimated: number;
-  percent: number;
-  lastCompleted: string | null;
+  pending: number;
 }
 
-export interface CrawlPoint {
+export interface CrawlRun {
   at: string;
-  searched: number;
+  workflow: "scan" | "resume";
+  conclusion: string | null;
+  url: string;
   stored: number;
 }
 
-export interface CrawlLock {
-  state: "idle" | "running";
-  since?: string;
-  holder?: string;
-  run?: string;
-}
-
 export interface Crawl {
-  searched: number;
-  budget: number;
-  pending: number;
-  runs: number;
-  lastRun: string;
-  overallPercent: number;
-  lock: CrawlLock;
-  sources: CrawlSource[];
-  targets: CrawlTarget[];
-  history: CrawlPoint[];
+  dataset: string;
+  since: string;
+  targets: CrawlTargetRow[];
+  sources: CrawlSourceRow[];
+  runs: CrawlRun[];
 }
 
 export interface GraphDocument {
@@ -157,14 +143,60 @@ export interface GraphDocument {
   generatedAt?: string;
 }
 
+export interface CategoryNode {
+  type: "CATEGORY";
+  kind: "credential" | "extension" | "band" | "repositories";
+  label: string;
+  count: number;
+  x?: number;
+  y?: number;
+}
+
+export interface CategoryEdge {
+  s: number;
+  t: number;
+  weight: number;
+}
+
+export interface Bucket {
+  label: string;
+  count: number;
+}
+
+export interface PublicStats {
+  byCredential: Bucket[];
+  byExtension: Bucket[];
+  byBand: Bucket[];
+  validity: { live: number; dead: number; formatOnly: number };
+  monthly: { month: string; found: number }[];
+  total: number;
+  repositories: number;
+  owners: number;
+  asOf: string;
+}
+
+export interface PublicDocument {
+  mode: "public";
+  schema: number;
+  nodes: CategoryNode[];
+  edges: CategoryEdge[];
+  stats: PublicStats;
+  dataset?: string;
+  generatedAt?: string;
+}
+
+export function isPublicDocument(document: GraphDocument | PublicDocument): document is PublicDocument {
+  return document.nodes.length === 0 || document.nodes[0].type === "CATEGORY";
+}
+
 export function nodeName(node: GraphNode): string {
   return node.type === "SECRET" ? node.target : node.label;
 }
 
-export async function loadGraph(url: string, options?: RequestInit): Promise<GraphDocument> {
+export async function loadGraph(url: string, options?: RequestInit): Promise<GraphDocument | PublicDocument> {
   const response = await fetch(url, options);
   if (!response.ok) {
     throw new Error(`could not load the graph (HTTP ${response.status})`);
   }
-  return (await response.json()) as GraphDocument;
+  return (await response.json()) as GraphDocument | PublicDocument;
 }

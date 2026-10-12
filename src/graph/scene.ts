@@ -1,8 +1,8 @@
 import Graph from "graphology";
-import forceAtlas2 from "graphology-layout-forceatlas2";
-import type { GraphDocument } from "../data/graph";
-import { nodeName } from "../data/graph";
-import { BAND_COLOR, TYPE_COLOR, INK } from "../lib/palette";
+import type { CategoryEdge, CategoryNode, GraphDocument } from "../data/graph.ts";
+import { nodeName } from "../data/graph.ts";
+import { BAND_COLOR, CATEGORY_COLOR, TYPE_COLOR, INK } from "../lib/palette.ts";
+import { hasStoredLayout, settle, topology } from "./settle.ts";
 
 const MIN_SIZE = 2.5;
 const MAX_SIZE = 30;
@@ -35,26 +35,12 @@ function rank(graph: Graph): void {
   ranked.slice(0, ALWAYS_LABEL).forEach((node) => graph.setNodeAttribute(node, "forceLabel", true));
 }
 
-function settle(graph: Graph): void {
-  const settings = forceAtlas2.inferSettings(graph);
-  forceAtlas2.assign(graph, {
-    iterations: 500,
-    settings: {
-      ...settings,
-      linLogMode: true,
-      outboundAttractionDistribution: true,
-      gravity: 1,
-      scalingRatio: 10,
-      barnesHutOptimize: graph.order > 200,
-    },
-  });
-}
-
 export function buildScene(document: GraphDocument): Graph {
-  const graph = new Graph();
+  const graph = topology(document);
+  const stored = hasStoredLayout(document);
 
   document.nodes.forEach((node, index) => {
-    graph.addNode(String(index), {
+    graph.mergeNodeAttributes(String(index), {
       label: nodeName(node),
       nodeType: node.type,
       band: node.band,
@@ -62,28 +48,48 @@ export function buildScene(document: GraphDocument): Graph {
       severity: node.severity,
       color: BAND_COLOR[node.band] ?? INK.muted,
       borderColor: TYPE_COLOR[node.type] ?? INK.muted,
-      x: Math.cos(index) * (1 + (index % 7)),
-      y: Math.sin(index) * (1 + (index % 5)),
       size: MIN_SIZE,
+      ...(stored ? { x: node.x, y: node.y } : {}),
     });
   });
-
-  const drawn = new Set<string>();
-  document.edges.forEach((edge) => {
-    if (edge.s === edge.t) {
-      return;
-    }
-    const from = Math.min(edge.s, edge.t);
-    const to = Math.max(edge.s, edge.t);
-    const key = `${from}-${to}`;
-    if (drawn.has(key) || !graph.hasNode(String(from)) || !graph.hasNode(String(to))) {
-      return;
-    }
-    drawn.add(key);
-    graph.addEdge(String(edge.s), String(edge.t), { size: 0.9, color: EDGE_COLOR, edgeType: edge.type });
-  });
+  graph.forEachEdge((edge) => graph.mergeEdgeAttributes(edge, { size: 0.9, color: EDGE_COLOR }));
 
   rank(graph);
+  if (!stored) {
+    settle(graph);
+  }
+  return graph;
+}
+
+export function categoryColor(kind: string): string {
+  return CATEGORY_COLOR[kind] ?? INK.muted;
+}
+
+export function categorySize(count: number, widest: number): number {
+  const scale = Math.sqrt(count / Math.max(1, widest));
+  return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * scale;
+}
+
+export function buildCategoryScene(document: { nodes: CategoryNode[]; edges: CategoryEdge[] }): Graph {
+  const graph = new Graph();
+  const widest = Math.max(1, ...document.nodes.map((node) => node.count));
+  document.nodes.forEach((node, index) => {
+    graph.addNode(String(index), {
+      label: `${node.label} (${node.count})`,
+      nodeType: node.kind,
+      color: categoryColor(node.kind),
+      borderColor: categoryColor(node.kind),
+      size: categorySize(node.count, widest),
+      x: Math.cos(index) * (1 + (index % 7)),
+      y: Math.sin(index) * (1 + (index % 5)),
+      forceLabel: true,
+    });
+  });
+  document.edges.forEach((edge) => {
+    if (!graph.hasEdge(String(edge.s), String(edge.t))) {
+      graph.addEdge(String(edge.s), String(edge.t), { size: 0.9, color: EDGE_COLOR, weight: edge.weight });
+    }
+  });
   settle(graph);
   return graph;
 }

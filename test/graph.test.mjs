@@ -15,152 +15,142 @@ function open() {
   return new SQL.Database(readFileSync(join(root, "scratch", "fixture.db")));
 }
 
-const pseudonym = (prefix, key) => `${prefix}-${Buffer.from(key).toString("hex").slice(-8)}`;
-
-function build(mode) {
+function build() {
   const db = open();
   try {
-    return buildGraph(db, { mode, pseudonym, schemaVersion: 4 });
+    return buildGraph(db, { schemaVersion: 4 });
   } finally {
     db.close();
   }
 }
 
 const find = (graph, type) => graph.nodes.filter((node) => node.type === type);
+const pairs = (graph, type, left, right) => graph.edges
+  .filter((edge) => edge.type === type)
+  .map((edge) => [left(graph.nodes[edge.s]), right(graph.nodes[edge.t])])
+  .sort();
+const label = (node) => node.label;
+const target = (node) => node.target;
 
-test("public omits maintainer nodes entirely", () => {
-  assert.equal(find(build("public"), "MAINTAINER").length, 0);
-});
-
-test("private keeps maintainer nodes with real logins", () => {
-  assert.deepEqual(find(build("private"), "MAINTAINER").map((n) => n.label).sort(),
+test("maintainer nodes keep their real logins", () => {
+  assert.deepEqual(find(build(), "MAINTAINER").map((n) => n.label).sort(),
     ["asmith", "jdoe"]);
 });
 
-test("public omits maintains and co-maintains edges", () => {
-  const types = new Set(build("public").edges.map((edge) => edge.type));
-  assert.ok(!types.has("MAINTAINS"), "MAINTAINS reached the public graph");
-  assert.ok(!types.has("CO_MAINTAINS"), "CO_MAINTAINS reached the public graph");
-});
-
-test("private keeps maintains and co-maintains edges", () => {
-  const types = new Set(build("private").edges.map((edge) => edge.type));
+test("maintains and co-maintains edges are kept", () => {
+  const types = new Set(build().edges.map((edge) => edge.type));
   assert.ok(types.has("MAINTAINS"));
   assert.ok(types.has("CO_MAINTAINS"));
 });
 
-test("a public secret node carries no value bearing field at all", () => {
-  for (const secret of find(build("public"), "SECRET")) {
-    for (const field of ["key", "label", "value"]) {
-      assert.ok(!(field in secret), `public secret exposed ${field}`);
-    }
-  }
-});
-
-test("a private secret node carries a masked value, not the raw one", () => {
-  const secret = find(build("private"), "SECRET").find((n) => n.target === "github-token");
+test("a secret node carries a masked value, not the raw one", () => {
+  const secret = find(build(), "SECRET").find((n) => n.target === "github-token");
   assert.ok(secret.value.includes("…"), "private value is not masked");
   assert.ok(!secret.value.includes("aaaaaaaaaaaabbbb"), "private value leaked the raw secret body");
 });
 
-test("public repositories and owners are pseudonymous", () => {
-  const graph = build("public");
-  for (const node of [...find(graph, "REPOSITORY"), ...find(graph, "OWNER")]) {
-    assert.match(node.label, /^(repo|owner)-[0-9a-f]{8}$/);
-  }
-});
-
-test("private repositories and owners carry real names", () => {
-  const graph = build("private");
+test("repositories and owners carry real names", () => {
+  const graph = build();
   assert.deepEqual(find(graph, "REPOSITORY").map((n) => n.label).sort(), ["acme/api", "acme/web"]);
   assert.deepEqual(find(graph, "OWNER").map((n) => n.label), ["acme"]);
 });
 
-test("package names stay real in public, being registry identifiers", () => {
-  assert.deepEqual(find(build("public"), "PACKAGE").map((n) => n.label), ["react"]);
+test("one FILE node per repository and path, shared by two leaks in one file", () => {
+  const graph = build();
+  assert.deepEqual(find(graph, "FILE").map(label).sort(),
+    ["deep\\win\\notes.txt", "deep\\win\\v1.2\\dist\\config", "package.json", "src/config/.env"]);
+  const envIndex = graph.nodes.findIndex((node) => node.type === "FILE" && node.label === "src/config/.env");
+  assert.equal(graph.edges.filter((edge) => edge.type === "LEAKED_IN" && edge.t === envIndex).length, 2);
 });
 
-test("public reduces an edge context to an extension", () => {
-  const contexts = build("public").edges.filter((e) => e.context !== undefined).map((e) => e.context);
-  assert.ok(contexts.length > 0, "no contexts survived to check");
-  for (const context of contexts) {
-    assert.ok(!context.includes("/") && !context.includes("\\"), `public context leaked a path: ${context}`);
+test("a leak points at its file, and a leak with no path keeps its direct edge", () => {
+  assert.deepEqual(pairs(build(), "LEAKED_IN", target, label), [
+    ["gcp-api-key", "acme/web"],
+    ["gcp-api-key", "deep\\win\\v1.2\\dist\\config"],
+    ["github-token", "src/config/.env"],
+    ["openai-api-key", "deep\\win\\notes.txt"],
+    ["openai-api-key", "src/config/.env"],
+  ]);
+});
+
+test("a repository contains each of its files exactly once", () => {
+  assert.deepEqual(pairs(build(), "CONTAINS", label, label), [
+    ["acme/api", "deep\\win\\notes.txt"],
+    ["acme/api", "src/config/.env"],
+    ["acme/web", "deep\\win\\v1.2\\dist\\config"],
+    ["acme/web", "package.json"],
+  ]);
+});
+
+test("a package's USED_IN points at the manifest file", () => {
+  assert.deepEqual(pairs(build(), "USED_IN", label, label), [["react", "package.json"]]);
+});
+
+test("a FILE carries its full path", () => {
+  for (const file of find(build(), "FILE")) {
+    assert.equal(file.path, file.label);
   }
-  assert.ok(contexts.includes(".env"));
-  assert.ok(contexts.includes(".txt"));
-  assert.ok(contexts.includes("(no extension)"));
 });
 
-test("private keeps the full path", () => {
-  const contexts = build("private").edges.filter((e) => e.context !== undefined).map((e) => e.context);
-  assert.ok(contexts.includes("src/config/.env"));
+test("no path-bearing edge carries a context", () => {
+  for (const edge of build().edges.filter((e) => e.type === "LEAKED_IN" || e.type === "USED_IN")) {
+    assert.ok(!("context" in edge), `${edge.type} edge kept a context`);
+  }
+});
+
+test("a FILE takes the worst severity and band of its leaks", () => {
+  const files = new Map(find(build(), "FILE").map((file) => [file.label, file]));
+  assert.equal(files.get("src/config/.env").severity, 90);
+  assert.equal(files.get("src/config/.env").band, "CRITICAL");
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").severity, 40);
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").band, "LOW");
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").firstSeen, "2026-09-15T10:00:00Z");
+});
+
+test("a CONTAINS edge carries weight 1 and its file's severity", () => {
+  const graph = build();
+  for (const edge of graph.edges.filter((e) => e.type === "CONTAINS")) {
+    assert.equal(edge.weight, 1);
+    assert.equal(edge.severity, graph.nodes[edge.t].severity);
+  }
+});
+test("the document is built in private mode", () => {
+  assert.equal(build().mode, "private");
 });
 
 test("an empty context is omitted rather than emitted blank", () => {
-  const ownedBy = build("private").edges.find((edge) => edge.type === "OWNED_BY");
+  const ownedBy = build().edges.find((edge) => edge.type === "OWNED_BY");
   assert.ok(!("context" in ownedBy));
 });
 
-test("a public OWNED_BY edge carries no context, even when the row has a non-empty one", () => {
-  const ownedByEdges = build("public").edges.filter((edge) => edge.type === "OWNED_BY");
-  assert.ok(ownedByEdges.length > 0, "no OWNED_BY edges survived to check");
-  for (const edge of ownedByEdges) {
-    assert.ok(!("context" in edge), "public OWNED_BY edge exposed a raw context");
-  }
-});
-
-test("a private OWNED_BY edge keeps its non-empty context", () => {
-  const ownedByEdges = build("private").edges.filter((edge) => edge.type === "OWNED_BY");
+test("an OWNED_BY edge keeps its non-empty context", () => {
+  const ownedByEdges = build().edges.filter((edge) => edge.type === "OWNED_BY");
   assert.ok(ownedByEdges.some((edge) => edge.context === "github:acme/api"),
     "private OWNED_BY lost its context");
 });
 
 test("edge endpoints index into the emitted node array", () => {
-  for (const mode of ["public", "private"]) {
-    const graph = build(mode);
-    for (const edge of graph.edges) {
-      assert.ok(graph.nodes[edge.s] !== undefined, `${mode} edge source out of range`);
-      assert.ok(graph.nodes[edge.t] !== undefined, `${mode} edge target out of range`);
-    }
+  const graph = build();
+  for (const edge of graph.edges) {
+    assert.ok(graph.nodes[edge.s] !== undefined, "edge source out of range");
+    assert.ok(graph.nodes[edge.t] !== undefined, "edge target out of range");
   }
 });
 
-test("an edge resolves to the specific nodes it connects, not merely to some node", () => {
-  const graph = build("private");
-  const leaked = graph.edges
-    .filter((edge) => edge.type === "LEAKED_IN")
-    .map((edge) => [graph.nodes[edge.s].target, graph.nodes[edge.t].label])
-    .sort();
-  assert.deepEqual(leaked, [
-    ["gcp-api-key", "acme/web"],
-    ["github-token", "acme/api"],
-    ["openai-api-key", "acme/api"],
-  ]);
-});
-
-test("a repository carries its maintainer count in both modes", () => {
-  for (const mode of ["public", "private"]) {
-    const graph = build(mode);
-    const byLabel = new Map(find(graph, "REPOSITORY").map((n) => [n.label, n.maintainers]));
-    const counts = [...byLabel.values()].sort();
-    assert.deepEqual(counts, [0, 2], `${mode} maintainer counts wrong`);
-  }
-});
-
-test("the same fields exist in both modes, so only disclosure differs", () => {
-  const fields = (graph, type) => Object.keys(graph.nodes.find((n) => n.type === type)).sort();
-  assert.deepEqual(fields(build("public"), "REPOSITORY"), fields(build("private"), "REPOSITORY"));
+test("a repository carries its maintainer count", () => {
+  const counts = find(build(), "REPOSITORY").map((n) => n.maintainers).sort();
+  assert.deepEqual(counts, [0, 2]);
 });
 
 test("stats count nodes and edges by type", () => {
-  const stats = build("private").stats;
+  const stats = build().stats;
   assert.equal(stats.nodes.SECRET, 3);
   assert.equal(stats.nodes.MAINTAINER, 2);
-  assert.equal(stats.edges.LEAKED_IN, 3);
+  assert.equal(stats.edges.LEAKED_IN, 5);
 });
 
 test("stats split credentials into validated live, validated dead and format only", () => {
-  const credentials = build("public").stats.credentials;
+  const credentials = build().stats.credentials;
   const byTarget = new Map(credentials.map((row) => [row.target, row]));
   assert.deepEqual(byTarget.get("openai-api-key"), { target: "openai-api-key", validatedLive: 1, validatedDead: 0, formatOnly: 0 });
   assert.deepEqual(byTarget.get("github-token"), { target: "github-token", validatedLive: 0, validatedDead: 1, formatOnly: 0 });
@@ -168,44 +158,103 @@ test("stats split credentials into validated live, validated dead and format onl
 });
 
 test("co-occurrence pairs secret types sharing a repository, and names none", () => {
-  const pairs = build("public").stats.coOccurrence;
+  const pairs = build().stats.coOccurrence;
   assert.deepEqual(pairs, [{ a: "github-token", b: "openai-api-key", repositories: 1 }]);
 });
 
-test("stats are identical in both modes, being aggregates", () => {
-  assert.deepEqual(build("public").stats, build("private").stats);
+const tally = (items, keyOf) => items.reduce((out, item) => {
+  out[keyOf(item)] = (out[keyOf(item)] ?? 0) + 1;
+  return out;
+}, {});
+
+test("stats count exactly the emitted nodes and edges", () => {
+  const graph = build();
+  assert.deepEqual(graph.stats.nodes, tally(graph.nodes, (node) => node.type));
+  assert.deepEqual(graph.stats.edges, tally(graph.edges, (edge) => edge.type));
+  assert.deepEqual(graph.stats.bands, tally(graph.nodes, (node) => node.band));
 });
 
-function withUnhandledNodeType(mode) {
+test("stats count maintainers and follows", () => {
+  const { stats } = build();
+  assert.equal(stats.nodes.MAINTAINER, 2);
+  assert.equal(stats.edges.FOLLOWS, 1);
+  assert.equal(stats.nodes.FILE, 4);
+  assert.equal(stats.edges.CONTAINS, 4);
+});
+
+test("lastSeen is the latest sighting among emitted nodes", () => {
+  const graph = build();
+  assert.equal(graph.stats.lastSeen, graph.nodes.map((node) => node.lastSeen).sort().at(-1));
+});
+
+test("an empty database reports no lastSeen", () => {
+  assert.equal(buildMini("").stats.lastSeen, null);
+});
+
+const MINI_SCHEMA = `
+  CREATE TABLE node (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', key TEXT NOT NULL,
+    label TEXT, category TEXT, valid INTEGER, platform TEXT, props TEXT,
+    popularity INTEGER, severity REAL NOT NULL DEFAULT 0, severity_band TEXT NOT NULL DEFAULT 'LOW',
+    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
+  CREATE TABLE edge (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    src INTEGER NOT NULL, dst INTEGER NOT NULL, type TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL DEFAULT 1,
+    severity REAL NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`;
+
+function buildMini(inserts) {
   const db = new SQL.Database();
-  db.run(`
-    CREATE TABLE node (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', key TEXT NOT NULL,
-      label TEXT, category TEXT, valid INTEGER, platform TEXT, props TEXT,
-      popularity INTEGER, severity REAL NOT NULL DEFAULT 0, severity_band TEXT NOT NULL DEFAULT 'LOW',
-      first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
-    CREATE TABLE edge (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      src INTEGER NOT NULL, dst INTEGER NOT NULL, type TEXT NOT NULL,
-      context TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL DEFAULT 1,
-      severity REAL NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
-    INSERT INTO node (type, target, key, label, severity, severity_band, first_seen, last_seen)
-      VALUES ('CONTRIBUTOR', '', 'github:ghost', 'ghost', 10, 'LOW',
-        '2026-09-14T10:00:00Z', '2026-09-14T10:00:00Z');
-  `);
+  db.run(MINI_SCHEMA + inserts);
   try {
-    return buildGraph(db, { mode, pseudonym, schemaVersion: 99 });
+    return buildGraph(db, { schemaVersion: 99 });
   } finally {
     db.close();
   }
 }
 
-test("a public build throws on a node type it does not handle", () => {
-  assert.throws(() => withUnhandledNodeType("public"), /unhandled node type/);
-});
+function withUnhandledNodeType() {
+  return buildMini(`
+    INSERT INTO node (type, target, key, label, severity, severity_band, first_seen, last_seen)
+      VALUES ('CONTRIBUTOR', '', 'github:ghost', 'ghost', 10, 'LOW',
+        '2026-09-14T10:00:00Z', '2026-09-14T10:00:00Z');`);
+}
 
-test("a private build still emits a node type it does not handle", () => {
-  const graph = withUnhandledNodeType("private");
+test("a node type with no special handling is still emitted", () => {
+  const graph = withUnhandledNodeType();
   assert.deepEqual(find(graph, "CONTRIBUTOR").map((n) => n.label), ["ghost"]);
 });
+
+const MULTI_PLATFORM = `
+  INSERT INTO node (type, target, key, label, platform, severity, severity_band, first_seen, last_seen) VALUES
+    ('REPOSITORY', '', 'github:acme/api', 'acme/api', 'github', 90, 'CRITICAL', '2026-09-14T10:00:00Z', '2026-09-16T10:00:00Z'),
+    ('REPOSITORY', '', 'gitlab:acme/web', 'acme/web', 'gitlab', 40, 'LOW', '2026-09-15T10:00:00Z', '2026-09-15T10:00:00Z'),
+    ('REPOSITORY', '', 'unknown:acme/old', 'acme/old', NULL, 10, 'LOW', '2026-09-13T10:00:00Z', '2026-09-13T10:00:00Z');`;
+
+test("one platform emits no PLATFORM node and no HOSTED_ON edge", () => {
+  const graph = build();
+  assert.equal(find(graph, "PLATFORM").length, 0, "emitted a lone platform");
+  assert.ok(!graph.edges.some((edge) => edge.type === "HOSTED_ON"), "emitted HOSTED_ON");
+});
+
+test("two platforms emit one PLATFORM each and host every repository on its own", () => {
+  const graph = buildMini(MULTI_PLATFORM);
+  assert.deepEqual(find(graph, "PLATFORM").map(label), ["github", "gitlab"]);
+  assert.deepEqual(pairs(graph, "HOSTED_ON", label, label),
+    [["acme/api", "github"], ["acme/web", "gitlab"]]);
+});
+
+test("a repository with no platform is neither hosted nor counted as a platform", () => {
+  const graph = buildMini(MULTI_PLATFORM);
+  assert.equal(find(graph, "PLATFORM").length, 2);
+  assert.ok(!pairs(graph, "HOSTED_ON", label, label).some(([repository]) => repository === "acme/old"));
+});
+
+test("a PLATFORM spans its repositories' sightings at zero severity", () => {
+  const github = find(buildMini(MULTI_PLATFORM), "PLATFORM").find((node) => node.label === "github");
+  assert.deepEqual(
+    { severity: github.severity, band: github.band, firstSeen: github.firstSeen, lastSeen: github.lastSeen },
+    { severity: 0, band: "LOW", firstSeen: "2026-09-14T10:00:00Z", lastSeen: "2026-09-16T10:00:00Z" });
+});
+
