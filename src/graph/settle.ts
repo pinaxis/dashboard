@@ -5,7 +5,8 @@ import type { GraphDocument } from "../data/graph";
 /**
  * @remarks imported by the browser bundle and, through Node's type stripping, by the build's
  * layout step, so the precomputed and in-browser layouts share one set of settings. That is why it
- * may use only erasable syntax and must not import a sibling module.
+ * may use only erasable syntax and must not import a sibling module at runtime (a type-only import
+ * is erased, so it is safe).
  */
 export function seedPosition(index: number): { x: number; y: number } {
   return { x: Math.cos(index) * (1 + (index % 7)), y: Math.sin(index) * (1 + (index % 5)) };

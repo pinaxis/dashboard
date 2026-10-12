@@ -157,3 +157,22 @@ test("rejects stats that count a node type the graph does not draw", () => {
   poisoned.stats.nodes.PLATFORM = 2;
   assert.throws(() => assertPublicSafe(poisoned), /does not draw/);
 });
+
+test("accepts a platform named by a short slug", () => {
+  const document = clean();
+  document.nodes.push({ type: "PLATFORM", label: "github", severity: 0, band: "LOW", firstSeen: "x", lastSeen: "y" });
+  assert.doesNotThrow(() => assertPublicSafe(document));
+});
+
+test("rejects a platform label that names a host", () => {
+  const poisoned = clean();
+  poisoned.nodes.push({ type: "PLATFORM", label: "gitlab.acme.internal", severity: 0, band: "LOW",
+    firstSeen: "x", lastSeen: "y" });
+  assert.throws(() => assertPublicSafe(poisoned), /PLATFORM label must be a short slug/);
+});
+
+test("rejects a document without stats", () => {
+  const poisoned = clean();
+  delete poisoned.stats;
+  assert.throws(() => assertPublicSafe(poisoned), /must carry stats/);
+});
