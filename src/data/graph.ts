@@ -104,48 +104,32 @@ export interface Stats {
   lastSeen: string | null;
 }
 
-export interface CrawlTarget {
+export interface CrawlTargetRow {
   target: string;
   discovered: number;
   pending: number;
-  scanned: number;
-  estimated: number;
-  percent: number;
-  lastCompleted: string | null;
+  complete: boolean;
 }
 
-export interface CrawlSource {
+export interface CrawlSourceRow {
   source: string;
-  scanned: number;
-  estimated: number;
-  percent: number;
-  lastCompleted: string | null;
+  pending: number;
 }
 
-export interface CrawlPoint {
+export interface CrawlRun {
   at: string;
-  searched: number;
+  workflow: "scan" | "resume";
+  conclusion: string | null;
+  url: string;
   stored: number;
 }
 
-export interface CrawlLock {
-  state: "idle" | "running";
-  since?: string;
-  holder?: string;
-  run?: string;
-}
-
 export interface Crawl {
-  searched: number;
-  budget: number;
-  pending: number;
-  runs: number;
-  lastRun: string;
-  overallPercent: number;
-  lock: CrawlLock;
-  sources: CrawlSource[];
-  targets: CrawlTarget[];
-  history: CrawlPoint[];
+  dataset: string;
+  since: string;
+  targets: CrawlTargetRow[];
+  sources: CrawlSourceRow[];
+  runs: CrawlRun[];
 }
 
 export interface GraphDocument {
