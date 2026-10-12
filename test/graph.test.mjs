@@ -27,6 +27,12 @@ function build(mode) {
 }
 
 const find = (graph, type) => graph.nodes.filter((node) => node.type === type);
+const pairs = (graph, type, left, right) => graph.edges
+  .filter((edge) => edge.type === type)
+  .map((edge) => [left(graph.nodes[edge.s]), right(graph.nodes[edge.t])])
+  .sort();
+const label = (node) => node.label;
+const target = (node) => node.target;
 
 test("public omits maintainer nodes entirely", () => {
   assert.equal(find(build("public"), "MAINTAINER").length, 0);
@@ -80,22 +86,75 @@ test("package names stay real in public, being registry identifiers", () => {
   assert.deepEqual(find(build("public"), "PACKAGE").map((n) => n.label), ["react"]);
 });
 
-test("public reduces an edge context to an extension", () => {
-  const contexts = build("public").edges.filter((e) => e.context !== undefined).map((e) => e.context);
-  assert.ok(contexts.length > 0, "no contexts survived to check");
-  for (const context of contexts) {
-    assert.ok(!context.includes("/") && !context.includes("\\"), `public context leaked a path: ${context}`);
+test("one FILE node per repository and path, shared by two leaks in one file", () => {
+  const graph = build("private");
+  assert.deepEqual(find(graph, "FILE").map(label).sort(),
+    ["deep\\win\\notes.txt", "deep\\win\\v1.2\\dist\\config", "package.json", "src/config/.env"]);
+  const envIndex = graph.nodes.findIndex((node) => node.type === "FILE" && node.label === "src/config/.env");
+  assert.equal(graph.edges.filter((edge) => edge.type === "LEAKED_IN" && edge.t === envIndex).length, 2);
+});
+
+test("a leak points at its file, and a leak with no path keeps its direct edge", () => {
+  assert.deepEqual(pairs(build("private"), "LEAKED_IN", target, label), [
+    ["gcp-api-key", "acme/web"],
+    ["gcp-api-key", "deep\\win\\v1.2\\dist\\config"],
+    ["github-token", "src/config/.env"],
+    ["openai-api-key", "deep\\win\\notes.txt"],
+    ["openai-api-key", "src/config/.env"],
+  ]);
+});
+
+test("a repository contains each of its files exactly once", () => {
+  assert.deepEqual(pairs(build("private"), "CONTAINS", label, label), [
+    ["acme/api", "deep\\win\\notes.txt"],
+    ["acme/api", "src/config/.env"],
+    ["acme/web", "deep\\win\\v1.2\\dist\\config"],
+    ["acme/web", "package.json"],
+  ]);
+});
+
+test("a package's USED_IN points at the manifest file", () => {
+  assert.deepEqual(pairs(build("private"), "USED_IN", label, label), [["react", "package.json"]]);
+});
+
+test("a public FILE is labelled by extension and carries no path", () => {
+  const files = find(build("public"), "FILE");
+  assert.deepEqual(files.map(label).sort(), ["(no extension)", ".env", ".json", ".txt"]);
+  for (const file of files) {
+    assert.ok(!("path" in file), `public FILE exposed path ${file.path}`);
   }
-  assert.ok(contexts.includes(".env"));
-  assert.ok(contexts.includes(".txt"));
-  assert.ok(contexts.includes("(no extension)"));
 });
 
-test("private keeps the full path", () => {
-  const contexts = build("private").edges.filter((e) => e.context !== undefined).map((e) => e.context);
-  assert.ok(contexts.includes("src/config/.env"));
+test("a private FILE carries its full path", () => {
+  for (const file of find(build("private"), "FILE")) {
+    assert.equal(file.path, file.label);
+  }
 });
 
+test("no path-bearing edge carries a context in either mode", () => {
+  for (const mode of ["public", "private"]) {
+    for (const edge of build(mode).edges.filter((e) => e.type === "LEAKED_IN" || e.type === "USED_IN")) {
+      assert.ok(!("context" in edge), `${mode} ${edge.type} edge kept a context`);
+    }
+  }
+});
+
+test("a FILE takes the worst severity and band of its leaks", () => {
+  const files = new Map(find(build("private"), "FILE").map((file) => [file.label, file]));
+  assert.equal(files.get("src/config/.env").severity, 90);
+  assert.equal(files.get("src/config/.env").band, "CRITICAL");
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").severity, 40);
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").band, "LOW");
+  assert.equal(files.get("deep\\win\\v1.2\\dist\\config").firstSeen, "2026-09-15T10:00:00Z");
+});
+
+test("a CONTAINS edge carries weight 1 and its file's severity", () => {
+  const graph = build("private");
+  for (const edge of graph.edges.filter((e) => e.type === "CONTAINS")) {
+    assert.equal(edge.weight, 1);
+    assert.equal(edge.severity, graph.nodes[edge.t].severity);
+  }
+});
 test("an empty context is omitted rather than emitted blank", () => {
   const ownedBy = build("private").edges.find((edge) => edge.type === "OWNED_BY");
   assert.ok(!("context" in ownedBy));
@@ -125,19 +184,6 @@ test("edge endpoints index into the emitted node array", () => {
   }
 });
 
-test("an edge resolves to the specific nodes it connects, not merely to some node", () => {
-  const graph = build("private");
-  const leaked = graph.edges
-    .filter((edge) => edge.type === "LEAKED_IN")
-    .map((edge) => [graph.nodes[edge.s].target, graph.nodes[edge.t].label])
-    .sort();
-  assert.deepEqual(leaked, [
-    ["gcp-api-key", "acme/web"],
-    ["github-token", "acme/api"],
-    ["openai-api-key", "acme/api"],
-  ]);
-});
-
 test("a repository carries its maintainer count in both modes", () => {
   for (const mode of ["public", "private"]) {
     const graph = build(mode);
@@ -156,7 +202,7 @@ test("stats count nodes and edges by type", () => {
   const stats = build("private").stats;
   assert.equal(stats.nodes.SECRET, 3);
   assert.equal(stats.nodes.MAINTAINER, 2);
-  assert.equal(stats.edges.LEAKED_IN, 3);
+  assert.equal(stats.edges.LEAKED_IN, 5);
 });
 
 test("stats split credentials into validated live, validated dead and format only", () => {
