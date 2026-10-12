@@ -1,5 +1,15 @@
 name = "pinaxis-dashboard"
+# The intisy account, because intisy.dev lives there and a Worker route can only name a zone held by
+# the Worker's own account. That constraint is what moved both Workers off the pinaxis account.
+account_id = "08952a642151a64b2034c43b4965036a"
 compatibility_date = "2026-09-16"
+
+# Serves the whole host except /private*, which the more specific route on the private Worker takes.
+# Were that route ever missing, this one would answer instead and serve the PUBLIC build, so the
+# failure mode is a broken private page rather than an unprotected one.
+routes = [
+  { pattern = "pinaxis.intisy.dev/*", zone_name = "intisy.dev" }
+]
 
 [assets]
 directory = "./dist"
