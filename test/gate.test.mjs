@@ -17,6 +17,7 @@ function clean() {
         firstSeen: "x", lastSeen: "y" },
       { type: "PACKAGE", target: "npm-package", label: "react", popularity: 5000, severity: 10,
         band: "LOW", firstSeen: "x", lastSeen: "y" },
+      { type: "FILE", label: ".env", severity: 60, band: "MEDIUM", firstSeen: "x", lastSeen: "y" },
     ],
     edges: [{ s: 0, t: 1, type: "LEAKED_IN", weight: 1, severity: 60, context: ".env" }],
     stats: { nodes: {}, edges: {}, bands: {}, credentials: [], coOccurrence: [], lastSeen: "y" },
@@ -110,4 +111,49 @@ test("rejects a follows edge", () => {
   const poisoned = clean();
   poisoned.edges.push({ s: 2, t: 2, type: "FOLLOWS", weight: 1, severity: 1 });
   assert.throws(() => assertPublicSafe(poisoned), /FOLLOWS/);
+});
+
+test("accepts stats that count only drawn types, and a zero count for an undrawn one", () => {
+  const document = clean();
+  document.stats.nodes = { SECRET: 1, REPOSITORY: 1, OWNER: 1, PACKAGE: 1, FILE: 1, PLATFORM: 0 };
+  document.stats.edges = { LEAKED_IN: 1 };
+  assert.doesNotThrow(() => assertPublicSafe(document));
+});
+
+test("rejects a FILE label that is a path", () => {
+  const poisoned = clean();
+  poisoned.nodes[4].label = "src/config/.env";
+  assert.throws(() => assertPublicSafe(poisoned), /FILE label must be an extension/);
+});
+
+test("rejects a FILE label that is a bare file name", () => {
+  const poisoned = clean();
+  poisoned.nodes[4].label = "notes.txt";
+  assert.throws(() => assertPublicSafe(poisoned), /FILE label must be an extension/);
+});
+
+test("rejects a FILE that carries its path", () => {
+  const poisoned = clean();
+  poisoned.nodes[4].path = "src/config/.env";
+  assert.throws(() => assertPublicSafe(poisoned), /FILE node must not carry path/);
+});
+
+test("rejects stats that count maintainers", () => {
+  const poisoned = clean();
+  poisoned.stats.nodes.MAINTAINER = 2192;
+  assert.throws(() => assertPublicSafe(poisoned), /must not count MAINTAINER/);
+});
+
+for (const type of ["MAINTAINS", "CO_MAINTAINS", "FOLLOWS"]) {
+  test(`rejects stats that count ${type} edges`, () => {
+    const poisoned = clean();
+    poisoned.stats.edges[type] = 1;
+    assert.throws(() => assertPublicSafe(poisoned), new RegExp(`must not count ${type}`));
+  });
+}
+
+test("rejects stats that count a node type the graph does not draw", () => {
+  const poisoned = clean();
+  poisoned.stats.nodes.PLATFORM = 2;
+  assert.throws(() => assertPublicSafe(poisoned), /does not draw/);
 });

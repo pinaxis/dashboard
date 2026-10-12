@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isExtensionLabel } from "./lib/paths.mjs";
 
 const PSEUDONYM = /^(repo|owner)-[0-9a-f]{8}$/;
 const PSEUDONYMOUS_TYPES = new Set(["REPOSITORY", "OWNER"]);
@@ -21,6 +22,25 @@ const SECRET_MARKERS = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "
  */
 const PACKAGE_COLLIDING_MARKER = "sk-";
 
+/**
+ * @remarks a count names nobody, but its size still discloses a graph public does not draw, so a
+ * stat is only publishable when the public document draws at least one node of its type.
+ */
+function assertStatsShowOnlyWhatIsDrawn(document) {
+  const stats = document.stats ?? {};
+  const nodeCounts = stats.nodes ?? {};
+  const edgeCounts = stats.edges ?? {};
+  assert.ok(!("MAINTAINER" in nodeCounts), "public stats must not count MAINTAINER nodes");
+  for (const type of FORBIDDEN_EDGES) {
+    assert.ok(!(type in edgeCounts), `public stats must not count ${type} edges`);
+  }
+  const drawn = new Set(document.nodes.map((node) => node.type));
+  for (const [type, count] of Object.entries(nodeCounts)) {
+    assert.ok(count === 0 || drawn.has(type),
+      `public stats count ${count} ${type} nodes that the graph does not draw`);
+  }
+}
+
 export function assertPublicSafe(document) {
   assert.equal(document.mode, "public", "a public build must be served a document built in public mode");
 
@@ -35,6 +55,10 @@ export function assertPublicSafe(document) {
       assert.match(node.label, PSEUDONYM,
         `a public ${node.type} label must be a pseudonym, got ${node.label}`);
     }
+    if (node.type === "FILE") {
+      assert.ok(!("path" in node), "a public FILE node must not carry path");
+      assert.ok(isExtensionLabel(node.label), `a public FILE label must be an extension, got ${node.label}`);
+    }
   }
 
   for (const edge of document.edges) {
@@ -44,6 +68,7 @@ export function assertPublicSafe(document) {
         `a public edge context must not be a path, got ${edge.context}`);
     }
   }
+  assertStatsShowOnlyWhatIsDrawn(document);
 
   const whole = JSON.stringify(document);
   for (const marker of SECRET_MARKERS) {
