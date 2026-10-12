@@ -10,6 +10,7 @@ const stats = {
   monthly: [{ month: "2026-06", found: 10 }],
   total: 13,
   repositories: 9,
+  owners: 0,
   asOf: "2026-08-02",
 };
 
@@ -25,5 +26,5 @@ test("tiles report the totals and name the as-of date", () => {
 
 test("a suppressed zero reads as fewer than five, not absent", () => {
   const byLabel = new Map(describePublic(stats).tiles.map((tile) => [tile.label, tile.value]));
-  assert.equal(byLabel.get("format only"), "fewer than 5");
+  assert.equal(byLabel.get("owners affected"), "fewer than 5");
 });

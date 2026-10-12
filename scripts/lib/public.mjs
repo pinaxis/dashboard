@@ -60,26 +60,43 @@ export function buildPublicGraph(db, policy) {
     extensionsBySecret.get(leak.src).add(extensionOf(leak.context));
   }
 
-  const byCredential = new Map();
+  const owned = all(db, "SELECT src, dst FROM edge WHERE type='OWNED_BY'")
+    .filter((row) => repositories.has(row.src));
+  const owners = new Set(owned.map((row) => row.dst));
+
   const byBand = new Map();
-  const byExtension = new Map();
   const byMonth = new Map();
   const credentialToExtension = new Map();
   const validity = { live: 0, dead: 0, formatOnly: 0 };
 
   for (const secret of secrets) {
-    increment(byCredential, secret.target);
     increment(byBand, secret.severity_band);
     increment(byMonth, secret.first_seen.slice(0, 7));
     validity[validityOf(secret)] += 1;
     for (const extension of extensionsBySecret.get(secret.id) ?? []) {
-      increment(byExtension, extension);
       increment(credentialToExtension, `${secret.target}\u0000${extension}`);
     }
   }
 
-  const credential = suppress(byCredential, policy.minGroup);
-  const extension = suppress(byExtension, policy.minGroup);
+  /**
+   * @remarks the credential and extension counts are the sums of their SURVIVING edges, not the true
+   * totals, so neither a node count nor a published bucket can be differenced against the drawn edges
+   * to recover a suppressed slice. The cost is that a thinly spread credential (no single extension
+   * pairing reaching the floor) does not appear, which is the safe direction for a public file.
+   */
+  const edges = [...credentialToExtension.entries()].filter(([, weight]) => weight >= policy.minGroup);
+  const byCredentialMap = new Map();
+  const byExtensionMap = new Map();
+  for (const [key, weight] of edges) {
+    const [target, ext] = key.split("\u0000");
+    increment(byCredentialMap, target, weight);
+    increment(byExtensionMap, ext, weight);
+  }
+  const ranked = (map) => [...map.entries()]
+    .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
+    .map(([label, count]) => ({ label, count }));
+  const credential = ranked(byCredentialMap);
+  const extension = ranked(byExtensionMap);
   const band = suppress(byBand, policy.minGroup);
   const total = credential.reduce((sum, entry) => sum + entry.count, 0);
 
@@ -100,15 +117,15 @@ export function buildPublicGraph(db, policy) {
     monthly,
     total,
     repositories: floorOrZero(repositories.size, policy.minGroup),
+    owners: floorOrZero(owners.size, policy.minGroup),
     asOf: toDate(policy.cutoff),
   };
 
-  const { nodes, edges } = categoryGraph(credential, extension, band, stats.repositories,
-    credentialToExtension, policy.minGroup);
-  return { mode: "public", nodes, edges, stats };
+  const graph = categoryGraph(credential, extension, band, stats.repositories, edges);
+  return { mode: "public", nodes: graph.nodes, edges: graph.edges, stats };
 }
 
-function categoryGraph(credential, extension, band, repositories, pairs, floor) {
+function categoryGraph(credential, extension, band, repositories, survivingPairs) {
   const nodes = [];
   const index = new Map();
   const add = (kind, label, count) => {
@@ -122,10 +139,7 @@ function categoryGraph(credential, extension, band, repositories, pairs, floor) 
     add("repositories", "repositories", repositories);
   }
   const edges = [];
-  for (const [key, weight] of pairs.entries()) {
-    if (weight < floor) {
-      continue;
-    }
+  for (const [key, weight] of survivingPairs) {
     const [target, ext] = key.split("\u0000");
     const s = index.get(`credential\u0000${target}`);
     const t = index.get(`extension\u0000${ext}`);

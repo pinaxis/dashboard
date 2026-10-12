@@ -9,7 +9,7 @@ export function describePublic(stats: PublicStats): { tiles: { label: string; va
       { label: "findings", value: compactNumber(stats.total) },
       { label: "confirmed live", value: fewer(stats.validity.live) },
       { label: "repositories affected", value: fewer(stats.repositories) },
-      { label: "format only", value: fewer(stats.validity.formatOnly) },
+      { label: "owners affected", value: fewer(stats.owners) },
     ],
     asOfNote: `Aggregates only, as of ${stats.asOf}. Findings appear here 30 days after they are first seen, `
       + `rounded to the day, with any group under five hidden.`,

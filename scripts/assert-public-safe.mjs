@@ -40,6 +40,7 @@ export function assertPublicSafe(document) {
     assertCount(entry.found, `month ${entry.month}`);
   }
   assertCount(stats.repositories ?? 0, "repositories");
+  assertCount(stats.owners ?? 0, "owners");
 
   const whole = JSON.stringify(document);
   assert.equal(whole.match(CLOCK), null, "a public graph must carry no clock timestamp, only YYYY-MM-DD");

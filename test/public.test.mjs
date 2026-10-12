@@ -60,12 +60,11 @@ test("the document is public and carries only category nodes", () => {
   }
 });
 
-test("a credential type at or above five stands; gcp folds and the sub-five other is dropped", () => {
+test("a credential appears only through a surviving pairing, counted by its edges", () => {
   const stats = build().stats;
   assert.equal(bucket(stats, "byCredential", "openai-api-key").count, 6);
-  assert.equal(bucket(stats, "byCredential", "aws-access-key").count, 7);
+  assert.equal(bucket(stats, "byCredential", "aws-access-key"), undefined);
   assert.equal(bucket(stats, "byCredential", "gcp-api-key"), undefined);
-  assert.equal(bucket(stats, "byCredential", "other"), undefined);
 });
 
 test("recent findings are excluded by the delay", () => {
@@ -74,11 +73,22 @@ test("recent findings are excluded by the delay", () => {
   assert.equal(bucket(later, "byCredential", "openai-api-key").count, 8);
 });
 
-test("a folded extension bucket survives when it totals at least five", () => {
+test("an extension count equals the sum of its surviving edges, so nothing is recoverable", () => {
   const stats = build().stats;
-  assert.equal(bucket(stats, "byExtension", ".env").count, 10);
+  assert.equal(bucket(stats, "byExtension", ".env").count, 6);
   assert.equal(bucket(stats, "byExtension", ".yml"), undefined);
-  assert.equal(bucket(stats, "byExtension", "other").count, 7);
+  assert.equal(bucket(stats, "byExtension", ".json"), undefined);
+});
+
+test("every extension count equals the sum of the edges into it", () => {
+  const graph = build();
+  const extensionNode = (label) => graph.nodes.find((n) => n.kind === "extension" && n.label === label);
+  for (const node of graph.nodes.filter((n) => n.kind === "extension")) {
+    const intoIt = graph.edges.filter((edge) => graph.nodes[edge.t] === node)
+      .reduce((sum, edge) => sum + edge.weight, 0);
+    assert.equal(node.count, intoIt, `extension ${node.label}`);
+  }
+  assert.ok(extensionNode(".env"));
 });
 
 test("validity splits, suppressing a sub-five part to zero", () => {
@@ -97,7 +107,7 @@ test("a headline total is the sum of surviving credential buckets, not the raw t
   const stats = build().stats;
   const shown = stats.byCredential.reduce((sum, entry) => sum + entry.count, 0);
   assert.equal(stats.total, shown);
-  assert.equal(stats.total, 13);
+  assert.equal(stats.total, 6);
 });
 
 test("asOf is the day-rounded cutoff and no clock timestamp survives", () => {
@@ -135,7 +145,8 @@ test("a finding leaked into two files counts once per extension, not twice towar
   const policy = { ...defaultPolicy(Date.UTC(2026, 8, 1)), minGroup: 1 };
   const stats = buildPublicGraph(db, policy).stats;
   db.close();
-  assert.equal(bucket(stats, "byCredential", "openai-api-key").count, 1);
   assert.equal(bucket(stats, "byExtension", ".env").count, 1);
   assert.equal(bucket(stats, "byExtension", ".pem").count, 1);
+  // The credential count is the sum of its edges (one per extension), so a two-file secret reads as 2.
+  assert.equal(bucket(stats, "byCredential", "openai-api-key").count, 2);
 });

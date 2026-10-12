@@ -171,6 +171,7 @@ export interface PublicStats {
   monthly: { month: string; found: number }[];
   total: number;
   repositories: number;
+  owners: number;
   asOf: string;
 }
 
