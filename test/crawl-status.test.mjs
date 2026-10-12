@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeStatus } from "../src/data/crawlStatus.ts";
+import { canStart, describeStatus, isActive } from "../src/data/crawlStatus.ts";
 
 const relative = (iso) => `at ${iso}`;
 const ready = (overrides) => ({ kind: "ready", status: { lock: { held: false }, paused: false, current: null, last: null, ...overrides } });
@@ -28,4 +28,16 @@ test("paused with nothing running says what a pause stops", () => {
 
 test("nothing running and no pause is idle", () => {
   assert.deepEqual(describeStatus(ready({}), relative), { tone: "idle", text: "No crawl running" });
+});
+
+test("a crawl can be started only when nothing runs and no lock is held", () => {
+  assert.equal(canStart(ready({}).status), true);
+  assert.equal(canStart(ready({ current: run }).status), false);
+  assert.equal(canStart(ready({ lock: { held: true } }).status), false);
+});
+
+test("the status is polled while a run is visible or the lock is held elsewhere", () => {
+  assert.equal(isActive(ready({}).status), false);
+  assert.equal(isActive(ready({ current: run }).status), true);
+  assert.equal(isActive(ready({ lock: { held: true } }).status), true);
 });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Crawl, GraphDocument } from "../data/graph";
 import { crawlApi } from "../data/crawlApi";
 import type { StartInputs } from "../data/crawlApi";
-import { describeStatus } from "../data/crawlStatus";
+import { canStart, describeStatus, isActive } from "../data/crawlStatus";
 import type { LiveState } from "../data/crawlStatus";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
@@ -42,7 +42,7 @@ function useLiveStatus(): [LiveState, () => Promise<void>] {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  const running = state.kind === "ready" && state.status.current !== null;
+  const running = state.kind === "ready" && isActive(state.status);
   useEffect(() => {
     if (!running) {
       return undefined;
@@ -89,7 +89,7 @@ function Controls({ crawl, state, refresh }: { crawl: Crawl; state: LiveState; r
       void act(crawlApi.cancel);
     }
   };
-  const cannotStart = busy || !status || status.current !== null;
+  const cannotStart = busy || !status || !canStart(status);
 
   return (
     <section className="panel panel-wide controls">

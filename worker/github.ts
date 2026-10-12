@@ -32,7 +32,7 @@ export interface GitHub {
   status(): Promise<CrawlStatus>;
   start(inputs: StartInputs): Promise<void>;
   pause(): Promise<void>;
-  cancelCurrent(): Promise<string | null>;
+  cancelCurrent(): Promise<string[]>;
 }
 
 export type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -159,7 +159,8 @@ export function gitHub(token: string, fetcher: Fetcher, repo = "pinaxis/pinaxis"
   return {
     async status() {
       const [lock, paused, runs] = await Promise.all([lockState(), isPaused(), listRuns()]);
-      const current = runs.find((run) => ACTIVE.has(run.status));
+      const active = runs.filter((run) => ACTIVE.has(run.status));
+      const current = active[active.length - 1];
       const last = runs.find((run) => run.status === "completed");
       return { lock, paused, current: current ? publicRun(current) : null, last: last ? publicRun(last) : null };
     },
@@ -171,12 +172,11 @@ export function gitHub(token: string, fetcher: Fetcher, repo = "pinaxis/pinaxis"
     pause,
     async cancelCurrent() {
       await pause();
-      const current = (await listRuns()).find((run) => ACTIVE.has(run.status));
-      if (!current) {
-        return null;
+      const active = (await listRuns()).filter((run) => ACTIVE.has(run.status)).reverse();
+      for (const run of active) {
+        await request(`/actions/runs/${run.id}/cancel`, { method: "POST" });
       }
-      await request(`/actions/runs/${current.id}/cancel`, { method: "POST" });
-      return current.url;
+      return active.map((run) => run.url);
     },
   };
 }

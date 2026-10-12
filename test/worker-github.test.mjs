@@ -124,14 +124,14 @@ test("a 422 that leaves the crawl unpaused fails", async () => {
 test("cancel pauses before cancelling the active run", async () => {
   const { client, calls } = fake({ ...WRITE_ROUTES, ...readRoutes({ scan: [rawRun(7, "in_progress", "2026-10-12T10:00:00Z")] }),
     "POST /actions/runs/7/cancel": { status: 202, body: {} } });
-  assert.equal(await client.cancelCurrent(), "https://github.com/pinaxis/pinaxis/actions/runs/7");
+  assert.deepEqual(await client.cancelCurrent(), ["https://github.com/pinaxis/pinaxis/actions/runs/7"]);
   const keys = calls.map((call) => call.key);
   assert.ok(keys.indexOf("POST /git/refs") < keys.indexOf("POST /actions/runs/7/cancel"));
 });
 
-test("cancel with nothing running still pauses and returns null", async () => {
+test("cancel with nothing running still pauses and cancels nothing", async () => {
   const { client, calls } = fake({ ...WRITE_ROUTES, ...readRoutes() });
-  assert.equal(await client.cancelCurrent(), null);
+  assert.deepEqual(await client.cancelCurrent(), []);
   assert.ok(calls.some((call) => call.key === "POST /git/refs"));
 });
 
@@ -140,4 +140,26 @@ test("a failed pause cancels nothing", async () => {
     "POST /git/refs": { status: 500, body: {} }, "POST /actions/runs/7/cancel": { status: 202, body: {} } });
   await assert.rejects(client.cancelCurrent());
   assert.ok(!calls.some((call) => call.key === "POST /actions/runs/7/cancel"));
+});
+
+test("current is the longest-running active run, not a resume that just started", async () => {
+  const status = await fake(readRoutes({
+    scan: [rawRun(3, "in_progress", "2026-10-12T08:00:00Z")],
+    resume: [rawRun(4, "queued", "2026-10-12T11:00:00Z")],
+  })).client.status();
+  assert.equal(status.current.url, "https://github.com/pinaxis/pinaxis/actions/runs/3");
+});
+
+test("cancel cancels every active run once paused", async () => {
+  const { client, calls } = fake({ ...WRITE_ROUTES, ...readRoutes({
+    scan: [rawRun(3, "in_progress", "2026-10-12T08:00:00Z")],
+    resume: [rawRun(4, "queued", "2026-10-12T11:00:00Z")] }),
+    "POST /actions/runs/3/cancel": { status: 202, body: {} },
+    "POST /actions/runs/4/cancel": { status: 202, body: {} } });
+  assert.deepEqual(await client.cancelCurrent(), [
+    "https://github.com/pinaxis/pinaxis/actions/runs/3",
+    "https://github.com/pinaxis/pinaxis/actions/runs/4",
+  ]);
+  assert.ok(calls.some((call) => call.key === "POST /actions/runs/3/cancel"));
+  assert.ok(calls.some((call) => call.key === "POST /actions/runs/4/cancel"));
 });

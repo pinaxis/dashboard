@@ -22,5 +22,5 @@ export const crawlApi = {
   status: () => call<CrawlStatus>(""),
   start: (inputs: StartInputs) => post<{ started: string }>("start", inputs),
   pause: () => post<{ paused: boolean }>("pause"),
-  cancel: () => post<{ cancelled: string | null }>("cancel"),
+  cancel: () => post<{ cancelled: string[] }>("cancel"),
 };

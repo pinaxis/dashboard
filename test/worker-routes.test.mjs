@@ -17,7 +17,7 @@ function deps({ signedIn = true, github = {} } = {}) {
         status: async () => STATUS,
         start: async (inputs) => { calls.push(["start", inputs]); },
         pause: async () => { calls.push(["pause"]); },
-        cancelCurrent: async () => { calls.push(["cancel"]); return "https://run/7"; },
+        cancelCurrent: async () => { calls.push(["cancel"]); return ["https://run/7"]; },
         ...github,
       },
     },
@@ -74,7 +74,7 @@ test("start dispatches the validated inputs and answers 202", async () => {
 test("pause and cancel answer what they did", async () => {
   assert.deepEqual(await json(await handle(request("/pause", { method: "POST" }), deps().deps)), [200, { paused: true }]);
   assert.deepEqual(await json(await handle(request("/cancel", { method: "POST" }), deps().deps)),
-    [200, { cancelled: "https://run/7" }]);
+    [200, { cancelled: ["https://run/7"] }]);
 });
 
 test("a GitHub failure is a 502 with its message", async () => {

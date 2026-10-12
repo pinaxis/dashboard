@@ -7,6 +7,15 @@ export type LiveState =
 
 export type StatusTone = "running" | "paused" | "idle" | "unknown";
 
+/** @remarks a lock held by a hop on another host has no run here; starting then would lift the pause. */
+export function canStart(status: CrawlStatus): boolean {
+  return status.current === null && !status.lock.held;
+}
+
+export function isActive(status: CrawlStatus): boolean {
+  return status.current !== null || status.lock.held;
+}
+
 export function describeStatus(state: LiveState, relative: (iso: string) => string): { tone: StatusTone; text: string } {
   if (state.kind === "loading") {
     return { tone: "unknown", text: "Checking crawl status" };
