@@ -1,6 +1,7 @@
 name = "pinaxis-dashboard-private"
 account_id = "08952a642151a64b2034c43b4965036a"
 compatibility_date = "2026-09-16"
+main = "worker/index.ts"
 # No workers.dev address. The only way in is /private on the shared host, which a Cloudflare Access
 # application on the intisy account protects. An Access policy is bound to a hostname and path, so a
 # second address would be a second way to the same data with no gate on it.
@@ -10,8 +11,16 @@ routes = [
   { pattern = "pinaxis.intisy.dev/private*", zone_name = "intisy.dev" }
 ]
 
+# Set from the Access application before deploying; while blank every /private/api request is a 403.
+[vars]
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+
 # Serves dist-private, whose every file lives under private/, so everything it can serve is something
 # Access protects. scripts/assert-private-scoped.mjs proves that against the build, not the config.
 [assets]
 directory = "./dist-private"
 not_found_handling = "single-page-application"
+binding = "ASSETS"
+# The single-page fallback would otherwise answer /private/api with index.html.
+run_worker_first = ["/private/api/*"]
