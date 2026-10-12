@@ -6,18 +6,24 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:public": "tsc --noEmit && node scripts/build-summary.mjs && node scripts/assert-public-safe.mjs && vite build",
-    "build:private": "tsc --noEmit && node scripts/build-summary.mjs private && vite build --mode private",
+    "build:public": "tsc --noEmit && node scripts/build-graph.mjs && node scripts/assert-public-safe.mjs && vite build",
+    "build:private": "tsc --noEmit && node scripts/build-graph.mjs private && vite build --mode private",
+    "graph": "node scripts/build-graph.mjs",
+    "test": "node scripts/make-fixture.mjs && node --test \"test/**/*.test.mjs\"",
     "fixture": "node scripts/make-fixture.mjs",
-    "check:summary": "node scripts/make-fixture.mjs && node scripts/check-summary.mjs",
+    "demo": "node scripts/make-demo-graph.mjs",
     "check:safe": "node scripts/assert-public-safe.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sigma/node-border": "^3.0.0",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.3",
+    "sigma": "^3.0.3",
     "sql.js": "^1.12.0"
   },
   "devDependencies": {

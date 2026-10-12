@@ -1,78 +1,202 @@
-import { useEffect, useState } from "react";
-import { loadModel } from "./data/source";
-import type { Model } from "./data/model";
-import { Overview } from "./components/Overview";
-import { ExposedSecrets } from "./components/ExposedSecrets";
-import { Exposure } from "./components/Exposure";
-import { Ecosystem } from "./components/Ecosystem";
-import { Coverage } from "./components/Coverage";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { GraphView } from "./components/GraphView";
+import { InsightRail } from "./components/InsightRail";
+import { Chips, type ChipItem } from "./components/Chips";
+import { Analytics } from "./components/Analytics";
+import { CrawlProgress } from "./components/CrawlProgress";
+import { Search } from "./components/Search";
+import { loadGraph, type GraphDocument } from "./data/graph";
+import { BAND_ORDER, BAND_COLOR, TYPE_ORDER, TYPE_COLOR, STATUS, INK } from "./lib/palette";
 import { relativeTime } from "./lib/format";
 
-type State =
-  | { status: "loading" }
-  | { status: "rebuilding" }
-  | { status: "error"; message: string }
-  | { status: "ready"; model: Model };
+type View = "graph" | "charts" | "crawl" | "search";
+type Mode = "public" | "private";
+type Gate = "idle" | "loading" | "blocked";
 
-export default function App() {
-  const [state, setState] = useState<State>({ status: "loading" });
+const PUBLIC_URL = `${import.meta.env.BASE_URL}graph.json`;
+const PRIVATE_URL = (import.meta.env.VITE_PRIVATE_URL as string) || `${import.meta.env.BASE_URL}graph.private.json`;
 
-  useEffect(() => {
-    let cancelled = false;
-    loadModel()
-      .then((model) => !cancelled && setState({ status: "ready", model }))
-      .catch((cause) => {
-        if (cancelled) {
-          return;
-        }
-        // A dataset from before the schema change lacks the new columns; show a transient notice.
-        const message = cause instanceof Error ? cause.message : String(cause);
-        setState(/column|table|schema/i.test(message)
-          ? { status: "rebuilding" }
-          : { status: "error", message });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+const VERIFY = [
+  { id: "live", label: "confirmed live", color: STATUS.critical, key: "validatedLive" as const },
+  { id: "dead", label: "validated dead", color: INK.muted, key: "validatedDead" as const },
+  { id: "format", label: "format only", color: "#3987e5", key: "formatOnly" as const },
+];
 
-  if (state.status === "loading") {
-    return <Shell><div className="state">Loading the dataset{"…"}</div></Shell>;
-  }
-  if (state.status === "rebuilding") {
-    return <Shell><div className="state">The dataset is being rebuilt. Check back after the next crawl.</div></Shell>;
-  }
-  if (state.status === "error") {
-    return <Shell><div className="state error">Could not load the dataset. {state.message}</div></Shell>;
-  }
-
-  const { model } = state;
-  return (
-    <div className="app">
-      <div className="masthead">
-        <h1>Pinaxis</h1>
-        <span className="updated">updated {relativeTime(model.totals.lastUpdated)}</span>
-      </div>
-      <p className="tagline">A live survey of public code: exposed secrets and what the ecosystem is built from.</p>
-      <p className="section-note">
-        Pinaxis crawls public code search for leaked credentials and for the dependencies, base images
-        and CI actions that public projects are built from. It stores what it finds, re-checks whether
-        the keys it can probe still work, and publishes the result as an open dataset.
-      </p>
-
-      <Overview totals={model.totals} categories={model.categories} />
-      <ExposedSecrets types={model.credentialTypes} leaks={model.leaks} />
-      <Exposure exposure={model.exposure} fileTypes={model.fileTypes} />
-      <Ecosystem
-        categories={model.referenceCategories}
-        references={model.references}
-        versionSpread={model.versionSpread}
-      />
-      <Coverage coverage={model.coverage} timeline={model.timeline} />
-    </div>
-  );
+function toggleIn(setter: (update: (previous: Set<string>) => Set<string>) => void) {
+  return (id: string) =>
+    setter((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="app">{children}</div>;
+export default function App() {
+  const [publicData, setPublicData] = useState<GraphDocument | null>(null);
+  const [privateData, setPrivateData] = useState<GraphDocument | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [bands, setBands] = useState<Set<string>>(() => new Set(BAND_ORDER));
+  const [types, setTypes] = useState<Set<string>>(() => new Set(TYPE_ORDER));
+  const [verify, setVerify] = useState<Set<string>>(() => new Set(["live", "dead", "format"]));
+  const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<View>("graph");
+  const [mode, setMode] = useState<Mode>("public");
+  const [gate, setGate] = useState<Gate>("idle");
+
+  useEffect(() => {
+    loadGraph(PUBLIC_URL).then(setPublicData).catch((cause: Error) => setError(cause.message));
+  }, []);
+
+  const showPublic = useCallback(() => {
+    setMode("public");
+    setSelected(null);
+    setGate("idle");
+  }, []);
+
+  const showPrivate = useCallback(async () => {
+    setSelected(null);
+    if (privateData) {
+      setMode("private");
+      return;
+    }
+    setGate("loading");
+    try {
+      const document = await loadGraph(PRIVATE_URL, { credentials: "include", cache: "no-store" });
+      setPrivateData(document);
+      setMode("private");
+      setGate("idle");
+    } catch {
+      setGate("blocked");
+    }
+  }, [privateData]);
+
+  const clear = useCallback(() => setSelected(null), []);
+  const openNode = useCallback((index: string) => {
+    setSelected(index);
+    setView("graph");
+  }, []);
+
+  useEffect(() => {
+    if (mode === "public" && (view === "crawl" || view === "search")) {
+      setView("graph");
+    }
+  }, [mode, view]);
+
+  const data = mode === "private" ? privateData : publicData;
+
+  const filters = useMemo(() => {
+    if (!data) {
+      return { severity: [], nodeTypes: [], status: [] };
+    }
+    const totals = data.stats.credentials.reduce(
+      (sum, row) => ({
+        validatedLive: sum.validatedLive + row.validatedLive,
+        validatedDead: sum.validatedDead + row.validatedDead,
+        formatOnly: sum.formatOnly + row.formatOnly,
+      }),
+      { validatedLive: 0, validatedDead: 0, formatOnly: 0 },
+    );
+    const severity: ChipItem[] = BAND_ORDER.map((band) => ({
+      id: band, label: band.toLowerCase(), color: BAND_COLOR[band], count: data.stats.bands[band] ?? 0,
+    }));
+    const nodeTypes: ChipItem[] = TYPE_ORDER.filter((type) => (data.stats.nodes[type] ?? 0) > 0).map((type) => ({
+      id: type, label: type.toLowerCase(), color: TYPE_COLOR[type], count: data.stats.nodes[type] ?? 0,
+    }));
+    const status: ChipItem[] = VERIFY.map((role) => ({
+      id: role.id, label: role.label, color: role.color, count: totals[role.key],
+    }));
+    return { severity, nodeTypes, status };
+  }, [data]);
+
+  if (error) {
+    return <div className="state">Could not load the exposure graph. {error}</div>;
+  }
+  if (!data) {
+    return <div className="state">Charting the exposure graph…</div>;
+  }
+
+  return (
+    <div className="app">
+      <header className="masthead">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          <div className="brand-words">
+            <h1>Pinaxis</h1>
+            <p>Exposure across public code, drawn as one graph</p>
+          </div>
+        </div>
+        <nav className="tabs" aria-label="View">
+          <button type="button" className={`tab ${view === "graph" ? "tab-on" : ""}`} aria-pressed={view === "graph"} onClick={() => setView("graph")}>Graph</button>
+          <button type="button" className={`tab ${view === "charts" ? "tab-on" : ""}`} aria-pressed={view === "charts"} onClick={() => setView("charts")}>Charts</button>
+          {mode === "private" && (
+            <button type="button" className={`tab ${view === "search" ? "tab-on" : ""}`} aria-pressed={view === "search"} onClick={() => setView("search")}>Search</button>
+          )}
+          {mode === "private" && (
+            <button type="button" className={`tab ${view === "crawl" ? "tab-on" : ""}`} aria-pressed={view === "crawl"} onClick={() => setView("crawl")}>Crawl</button>
+          )}
+        </nav>
+        <div className="controls">
+          <div className="toggle" role="group" aria-label="Disclosure">
+            <button type="button" className={`tab ${mode === "public" ? "tab-on" : ""}`} aria-pressed={mode === "public"} onClick={showPublic}>Public</button>
+            <button type="button" className={`tab ${mode === "private" ? "tab-on" : ""}`} aria-pressed={mode === "private"} onClick={showPrivate}>
+              <span aria-hidden="true">🔒</span> Private
+            </button>
+          </div>
+        </div>
+      </header>
+      {view === "graph" && (
+        <div className="toolbar">
+          <Chips label="Severity" items={filters.severity} active={bands} onToggle={toggleIn(setBands)} />
+          <Chips label="Types" items={filters.nodeTypes} active={types} onToggle={toggleIn(setTypes)} />
+          <Chips label="Status" items={filters.status} active={verify} onToggle={toggleIn(setVerify)} />
+        </div>
+      )}
+      {view === "graph" && (
+        <main className="stage">
+          <GraphView document={data} activeBands={bands} activeTypes={types} activeVerify={verify} selected={selected} onSelect={setSelected} />
+          <InsightRail document={data} selected={selected} onClear={clear} onSelect={setSelected} />
+        </main>
+      )}
+      {view === "charts" && (
+        <main className="stage stage-scroll">
+          <Analytics document={data} />
+        </main>
+      )}
+      {view === "search" && (
+        <main className="stage stage-scroll">
+          <Search document={data} onOpen={openNode} />
+        </main>
+      )}
+      {view === "crawl" && (
+        <main className="stage stage-scroll">
+          <CrawlProgress document={data} />
+        </main>
+      )}
+      <footer className="footer">
+        <span>{data.nodes.length} nodes, {data.edges.length} relationships</span>
+        <span>{mode === "private" ? "private view" : "public view"}</span>
+        <span>{data.dataset ?? "current dataset"}</span>
+        <span>updated {relativeTime(data.stats.lastSeen)}</span>
+      </footer>
+      {gate === "blocked" && (
+        <div className="gate" role="dialog" aria-modal="true" aria-label="Private view protected">
+          <div className="gate-card">
+            <h2>Private view is protected</h2>
+            <p>
+              The private graph carries real repository and owner names, maintainers, and masked secret
+              values. It is served only to authorized accounts behind Cloudflare Access.
+            </p>
+            <div className="gate-actions">
+              <a className="gate-primary" href={PRIVATE_URL} target="_blank" rel="noreferrer">Sign in to the secure view</a>
+              <button type="button" className="gate-secondary" onClick={showPublic}>Stay on public</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

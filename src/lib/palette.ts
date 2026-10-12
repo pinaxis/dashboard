@@ -30,3 +30,29 @@ export const INK = {
 export function seriesColor(index: number): string {
   return SERIES[index % SERIES.length];
 }
+
+// Severity is an ordered state, so it wears the reserved status ramp (worst to least): a node's fill
+// says how bad, never which kind. Type identity is carried separately by the ring colour below.
+export const BAND_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
+export type Band = (typeof BAND_ORDER)[number];
+export const BAND_COLOR: Record<string, string> = {
+  CRITICAL: STATUS.critical,
+  HIGH: STATUS.serious,
+  MEDIUM: STATUS.warning,
+  LOW: STATUS.good,
+};
+
+// Node type is an identity, so it wears a fixed categorical slot, assigned once and never cycled.
+export const TYPE_ORDER = ["SECRET", "REPOSITORY", "OWNER", "PACKAGE", "MAINTAINER", "PLATFORM", "FILE"] as const;
+export type NodeTypeName = (typeof TYPE_ORDER)[number];
+export const TYPE_COLOR: Record<string, string> = {
+  SECRET: SERIES[0],
+  REPOSITORY: SERIES[1],
+  OWNER: SERIES[2],
+  PACKAGE: SERIES[3],
+  MAINTAINER: SERIES[4],
+  PLATFORM: SERIES[5],
+  FILE: SERIES[6],
+};
+
+export const DIM = "#3a3a37";
