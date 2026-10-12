@@ -1,19 +1,13 @@
-import { useState } from "react";
-import type { GraphDocument } from "../data/graph";
+import { useCallback, useEffect, useState } from "react";
+import type { Crawl, GraphDocument } from "../data/graph";
+import { crawlApi } from "../data/crawlApi";
+import type { StartInputs } from "../data/crawlApi";
+import { canStart, describeStatus, isActive } from "../data/crawlStatus";
+import type { LiveState } from "../data/crawlStatus";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
 
-const REPO_URL = (import.meta.env.VITE_REPO_URL as string) || "https://github.com/pinaxis/pinaxis";
-
-function percentColor(percent: number): string {
-  if (percent >= 100) {
-    return STATUS.good;
-  }
-  if (percent >= 50) {
-    return STATUS.warning;
-  }
-  return STATUS.serious;
-}
+const POLL_MS = 15_000;
 
 function Tile({ value, label, accent }: { value: string; label: string; accent?: string }) {
   return (
@@ -33,29 +27,109 @@ function Panel({ title, wide, children }: { title: string; wide?: boolean; child
   );
 }
 
-function ProgressRow({ label, percent, detail, completed }: { label: string; percent: number; detail: string; completed: string | null }) {
+const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
+const errorText = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
+
+function useLiveStatus(): [LiveState, () => Promise<void>] {
+  const [state, setState] = useState<LiveState>({ kind: "loading" });
+  const refresh = useCallback(async () => {
+    try {
+      setState({ kind: "ready", status: await crawlApi.status() });
+    } catch (failure) {
+      setState({ kind: "unknown", error: errorText(failure) });
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  const running = state.kind === "ready" && isActive(state.status);
+  useEffect(() => {
+    if (!running) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      if (!window.document.hidden) {
+        void refresh();
+      }
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [running, refresh]);
+  return [state, refresh];
+}
+
+function Controls({ crawl, state, refresh }: { crawl: Crawl; state: LiveState; refresh: () => Promise<void> }) {
+  const [targets, setTargets] = useState("");
+  const [maxSearches, setMaxSearches] = useState("");
+  const [pages, setPages] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const status = state.kind === "ready" ? state.status : null;
+
+  const act = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusy(false);
+      await refresh();
+    }
+  };
+  const inputs = (mode: StartInputs["mode"]): StartInputs => ({
+    mode,
+    ...(targets.trim() ? { targets: targets.trim() } : {}),
+    ...(maxSearches ? { maxSearches: Number(maxSearches) } : {}),
+    ...(pages ? { discoveryPages: Number(pages) } : {}),
+  });
+  const cancel = () => {
+    if (window.confirm("Cancel the running crawl? It is paused first; work since its last snapshot is lost, "
+      + "and the crawl lock clears when its lease expires.")) {
+      void act(crawlApi.cancel);
+    }
+  };
+  const cannotStart = busy || !status || !canStart(status);
+
   return (
-    <li className="progress-row">
-      <div className="progress-head">
-        <span className="progress-label" title={label}>{label}</span>
-        <span className="progress-pct">{percent}%</span>
+    <section className="panel panel-wide controls">
+      <h2>Controls</h2>
+      <div className="controls-grid">
+        <label>
+          Targets (comma separated, blank for all)
+          <input list="crawl-targets" value={targets} onChange={(event) => setTargets(event.target.value)} />
+          <datalist id="crawl-targets">
+            {crawl.targets.map((row) => <option key={row.target} value={row.target} />)}
+          </datalist>
+        </label>
+        <label>
+          Max searches (blank for uncapped)
+          <input type="number" min={1} max={1000} value={maxSearches} onChange={(event) => setMaxSearches(event.target.value)} />
+        </label>
+        <label>
+          Discovery pages (blank for all ten)
+          <input type="number" min={1} max={10} value={pages} onChange={(event) => setPages(event.target.value)} />
+        </label>
       </div>
-      <span className="hbar-track">
-        <span className="hbar-fill" style={{ width: `${percent}%`, background: percentColor(percent) }} />
-      </span>
-      <span className="progress-detail">
-        {detail} · {completed ? `last full pass ${relativeTime(completed)}` : "no full pass yet"}
-      </span>
-    </li>
+      <div className="controls-actions">
+        <button type="button" className="control-start" disabled={cannotStart} onClick={() => void act(() => crawlApi.start(inputs("full")))}>Start full crawl</button>
+        <button type="button" className="control-stop" disabled={cannotStart} onClick={() => void act(() => crawlApi.start(inputs("test")))}>Start test run</button>
+        <button type="button" className="control-stop" disabled={busy || !status || status.paused} onClick={() => void act(crawlApi.pause)}>Pause</button>
+        <button type="button" className="control-stop" disabled={busy || !status?.current} onClick={cancel}>Cancel running crawl</button>
+      </div>
+      {error && <p className="progress-detail" style={{ color: STATUS.serious }}>{error}</p>}
+      <p className="progress-detail">
+        A full crawl is the default. A manual full run lifts a pause; a capped or test run sets the pause again
+        when it starts, so the schedule does not continue it uncapped. Pause lets the current turn finish;
+        cancel stops it now.
+      </p>
+    </section>
   );
 }
 
 export function CrawlProgress({ document }: { document: GraphDocument }) {
   const crawl = document.crawl;
-  const [requested, setRequested] = useState(false);
-  const [target, setTarget] = useState("all");
-  const [maxSearches, setMaxSearches] = useState(25);
-  const [pages, setPages] = useState(1);
+  const [state, refresh] = useLiveStatus();
 
   if (!crawl) {
     return (
@@ -65,133 +139,72 @@ export function CrawlProgress({ document }: { document: GraphDocument }) {
     );
   }
 
-  const running = requested || crawl.lock.state === "running";
-  const startCrawl = () => {
-    window.open(`${REPO_URL}/actions/workflows/scan.yml`, "_blank", "noopener");
-    setRequested(true);
-  };
-  const stopCrawl = () => {
-    window.open(crawl.lock.run ?? `${REPO_URL}/actions`, "_blank", "noopener");
-    setRequested(false);
-  };
-
-  const scannedTotal = crawl.targets.reduce((sum, target) => sum + target.scanned, 0);
-  const estimatedTotal = crawl.targets.reduce((sum, target) => sum + target.estimated, 0);
-  const mostStored = Math.max(1, ...crawl.history.map((point) => point.stored));
+  const line = describeStatus(state, relativeTime);
+  const lastRun = crawl.runs[0];
+  const mostStored = Math.max(1, ...crawl.runs.map((run) => run.stored));
 
   return (
     <div className="analytics">
-      <div className={`crawl-status crawl-status-${running ? "running" : "idle"}`}>
+      <div className={`crawl-status crawl-status-${line.tone}`}>
         <span className="crawl-dot" />
-        <span>
-          {running
-            ? `Crawl running${crawl.lock.since ? ` since ${relativeTime(crawl.lock.since)}` : ""}${requested ? " (dispatch requested)" : ""}`
-            : "No crawl running"}
-        </span>
+        <span>{line.text}</span>
+        {state.kind === "ready" && state.status.current && (
+          <a href={state.status.current.url} target="_blank" rel="noopener noreferrer">view run</a>
+        )}
       </div>
 
-      <section className="panel panel-wide controls">
-        <h2>Controls</h2>
-        <div className="controls-grid">
-          <label>
-            Target
-            <select value={target} onChange={(event) => setTarget(event.target.value)}>
-              <option value="all">all</option>
-              {crawl.targets.map((row) => (
-                <option key={row.target} value={row.target}>{row.target}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Max searches
-            <input type="number" min={1} value={maxSearches} onChange={(event) => setMaxSearches(Number(event.target.value))} />
-          </label>
-          <label>
-            Discovery pages
-            <input type="number" min={1} value={pages} onChange={(event) => setPages(Number(event.target.value))} />
-          </label>
-        </div>
-        <div className="controls-actions">
-          <button type="button" className="control-start" disabled={running} onClick={startCrawl}>Start crawl</button>
-          <button type="button" className="control-stop" disabled={!running} onClick={stopCrawl}>Stop running crawl</button>
-        </div>
-        <p className="progress-detail">
-          Start opens the <code>scan.yml</code> workflow on GitHub with target <code>{target}</code>,
-          max searches <code>{maxSearches}</code>, pages <code>{pages}</code>; you dispatch it with your own
-          account. A run holds an atomic <code>refs/tags/crawl-lock</code> ref for its whole duration, so a
-          second dispatch refuses and only one crawl ever runs at a time. One-click control from here would
-          need an access-gated worker holding a token.
-        </p>
-      </section>
+      <Controls crawl={crawl} state={state} refresh={refresh} />
 
       <div className="tiles">
-        <Tile value={`${crawl.overallPercent}%`} label="overall scanned" accent={percentColor(crawl.overallPercent)} />
-        <Tile value={`${crawl.searched}/${crawl.budget}`} label="searches this run" />
-        <Tile value={compactNumber(crawl.pending)} label="pending frontier" accent={SERIES[3]} />
-        <Tile value={String(crawl.runs)} label="runs on this dataset" />
-        <Tile value={relativeTime(crawl.lastRun)} label="last run" />
+        <Tile value={compactNumber(sum(crawl.targets.map((row) => row.pending)))} label="queued queries" accent={SERIES[3]} />
+        <Tile value={compactNumber(sum(crawl.targets.map((row) => row.discovered)))} label="items found" />
+        <Tile value={String(crawl.runs.length)} label={`runs on ${crawl.dataset}`} />
+        <Tile value={lastRun ? relativeTime(lastRun.at) : "none"} label={lastRun ? `last run, ${lastRun.conclusion ?? "running"}` : "last run"} />
       </div>
       <div className="charts">
-        <Panel title="Overall progress" wide>
-          <div className="hbar-track" style={{ height: 18 }}>
-            <span className="hbar-fill" style={{ width: `${crawl.overallPercent}%`, background: percentColor(crawl.overallPercent) }} />
-          </div>
-          <p className="progress-detail" style={{ marginTop: "0.7rem" }}>
-            {compactNumber(scannedTotal)} of an estimated {compactNumber(estimatedTotal)} items scanned across
-            all targets. The estimate is scanned items plus the pending frontier, so it moves as discovery finds more.
-          </p>
-        </Panel>
-
-        <Panel title="By source">
-          <ul className="progress-list">
-            {crawl.sources.map((source) => (
-              <ProgressRow
-                key={source.source}
-                label={source.source}
-                percent={source.percent}
-                detail={`${compactNumber(source.scanned)} of ~${compactNumber(source.estimated)} scanned`}
-                completed={source.lastCompleted}
-              />
-            ))}
-          </ul>
-        </Panel>
-
-        <Panel title="Search budget">
-          <div className="hbar-track" style={{ height: 16 }}>
-            <span className="hbar-fill" style={{ width: `${Math.round((crawl.searched / Math.max(1, crawl.budget)) * 100)}%`, background: STATUS.warning }} />
-          </div>
-          <p className="progress-detail" style={{ marginTop: "0.7rem" }}>
-            {crawl.searched} of {crawl.budget} searches spent this run. A capped run stops here and refuses to
-            hop, so the {compactNumber(crawl.pending)}-item frontier persists to the next run.
-          </p>
-        </Panel>
-
         <Panel title="By target" wide>
-          <ul className="progress-list">
-            {crawl.targets.map((target) => (
-              <ProgressRow
-                key={target.target}
-                label={target.target}
-                percent={target.percent}
-                detail={`${compactNumber(target.scanned)} of ~${compactNumber(target.estimated)} scanned · ${target.pending} pending · ${target.discovered} found`}
-                completed={target.lastCompleted}
-              />
-            ))}
-          </ul>
-        </Panel>
-
-        <Panel title="Recent runs" wide>
           <ul className="hbars">
-            {crawl.history.map((point) => (
-              <li key={point.at}>
-                <span className="hbar-label">{relativeTime(point.at)}</span>
-                <span className="hbar-track">
-                  <span className="hbar-fill" style={{ width: `${(point.stored / mostStored) * 100}%`, background: SERIES[0] }} />
+            {crawl.targets.map((row) => (
+              <li key={row.target}>
+                <span className="hbar-label">{row.target}</span>
+                <span className="hbar-value">
+                  {compactNumber(row.discovered)} found · {compactNumber(row.pending)} queued
+                  {row.complete && <strong style={{ color: STATUS.good }}> · done</strong>}
                 </span>
-                <span className="hbar-value">{compactNumber(point.stored)} stored · {point.searched} searched</span>
               </li>
             ))}
           </ul>
+        </Panel>
+
+        <Panel title="By source">
+          <ul className="hbars">
+            {crawl.sources.map((row) => (
+              <li key={row.source}>
+                <span className="hbar-label">{row.source}</span>
+                <span className="hbar-value">{compactNumber(row.pending)} queued</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+
+        <Panel title="First seen during each run" wide>
+          <ul className="hbars">
+            {crawl.runs.map((run) => (
+              <li key={run.url}>
+                <a className="hbar-label" href={run.url} target="_blank" rel="noopener noreferrer">
+                  {run.workflow} {relativeTime(run.at)}
+                </a>
+                <span className="hbar-track">
+                  <span className="hbar-fill" style={{ width: `${(run.stored / mostStored) * 100}%`, background: SERIES[0] }} />
+                </span>
+                <span className="hbar-value">{compactNumber(run.stored)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="progress-detail">
+            Nodes first seen between a run's start and the next run's start. An approximation: a long run can
+            find nodes after a later run has started.
+          </p>
         </Panel>
       </div>
     </div>

@@ -45,6 +45,7 @@ function assertStatsShowOnlyWhatIsDrawn(document) {
 
 export function assertPublicSafe(document) {
   assert.equal(document.mode, "public", "a public build must be served a document built in public mode");
+  assert.ok(!("crawl" in document), "a public graph must carry no crawl telemetry");
 
   for (const node of document.nodes) {
     assert.notEqual(node.type, "MAINTAINER", "a public graph must carry no MAINTAINER node");

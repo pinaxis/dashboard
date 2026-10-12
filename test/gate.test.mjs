@@ -176,3 +176,9 @@ test("rejects a document without stats", () => {
   delete poisoned.stats;
   assert.throws(() => assertPublicSafe(poisoned), /must carry stats/);
 });
+
+test("rejects crawl telemetry in a public document", () => {
+  const poisoned = clean();
+  poisoned.crawl = { dataset: "dataset-v5", since: "x", targets: [], sources: [], runs: [] };
+  assert.throws(() => assertPublicSafe(poisoned), /crawl telemetry/);
+});

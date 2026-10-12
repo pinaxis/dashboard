@@ -884,6 +884,15 @@ body {
   box-shadow: 0 0 0 4px rgba(12, 163, 12, 0.18);
 }
 
+.crawl-status-paused .crawl-dot {
+  background: #e0a400;
+}
+
+.crawl-status-unknown .crawl-dot {
+  background: none;
+  border: 2px solid var(--ink-muted);
+}
+
 .controls {
   margin-bottom: 1rem;
 }
