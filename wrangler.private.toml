@@ -1,8 +1,17 @@
 name = "pinaxis-dashboard-private"
+account_id = "08952a642151a64b2034c43b4965036a"
 compatibility_date = "2026-09-16"
-# Reachable at its workers.dev host, which is gated by a Cloudflare Access application on the pinaxis account.
-workers_dev = true
+# No workers.dev address. The only way in is /private on the shared host, which a Cloudflare Access
+# application on the intisy account protects. An Access policy is bound to a hostname and path, so a
+# second address would be a second way to the same data with no gate on it.
+workers_dev = false
 
+routes = [
+  { pattern = "pinaxis.intisy.dev/private*", zone_name = "intisy.dev" }
+]
+
+# Serves dist-private, whose every file lives under private/, so everything it can serve is something
+# Access protects. scripts/assert-private-scoped.mjs proves that against the build, not the config.
 [assets]
-directory = "./dist"
+directory = "./dist-private"
 not_found_handling = "single-page-application"
