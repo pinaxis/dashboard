@@ -222,29 +222,34 @@ test("stats are identical in both modes, being aggregates", () => {
   assert.deepEqual(build("public").stats, build("private").stats);
 });
 
-function withUnhandledNodeType(mode) {
+const MINI_SCHEMA = `
+  CREATE TABLE node (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', key TEXT NOT NULL,
+    label TEXT, category TEXT, valid INTEGER, platform TEXT, props TEXT,
+    popularity INTEGER, severity REAL NOT NULL DEFAULT 0, severity_band TEXT NOT NULL DEFAULT 'LOW',
+    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
+  CREATE TABLE edge (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    src INTEGER NOT NULL, dst INTEGER NOT NULL, type TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL DEFAULT 1,
+    severity REAL NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);`;
+
+function buildMini(mode, inserts) {
   const db = new SQL.Database();
-  db.run(`
-    CREATE TABLE node (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', key TEXT NOT NULL,
-      label TEXT, category TEXT, valid INTEGER, platform TEXT, props TEXT,
-      popularity INTEGER, severity REAL NOT NULL DEFAULT 0, severity_band TEXT NOT NULL DEFAULT 'LOW',
-      first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
-    CREATE TABLE edge (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      src INTEGER NOT NULL, dst INTEGER NOT NULL, type TEXT NOT NULL,
-      context TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL DEFAULT 1,
-      severity REAL NOT NULL DEFAULT 0, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
-    INSERT INTO node (type, target, key, label, severity, severity_band, first_seen, last_seen)
-      VALUES ('CONTRIBUTOR', '', 'github:ghost', 'ghost', 10, 'LOW',
-        '2026-09-14T10:00:00Z', '2026-09-14T10:00:00Z');
-  `);
+  db.run(MINI_SCHEMA + inserts);
   try {
     return buildGraph(db, { mode, pseudonym, schemaVersion: 99 });
   } finally {
     db.close();
   }
+}
+
+function withUnhandledNodeType(mode) {
+  return buildMini(mode, `
+    INSERT INTO node (type, target, key, label, severity, severity_band, first_seen, last_seen)
+      VALUES ('CONTRIBUTOR', '', 'github:ghost', 'ghost', 10, 'LOW',
+        '2026-09-14T10:00:00Z', '2026-09-14T10:00:00Z');`);
 }
 
 test("a public build throws on a node type it does not handle", () => {
@@ -254,4 +259,44 @@ test("a public build throws on a node type it does not handle", () => {
 test("a private build still emits a node type it does not handle", () => {
   const graph = withUnhandledNodeType("private");
   assert.deepEqual(find(graph, "CONTRIBUTOR").map((n) => n.label), ["ghost"]);
+});
+
+const MULTI_PLATFORM = `
+  INSERT INTO node (type, target, key, label, platform, severity, severity_band, first_seen, last_seen) VALUES
+    ('REPOSITORY', '', 'github:acme/api', 'acme/api', 'github', 90, 'CRITICAL', '2026-09-14T10:00:00Z', '2026-09-16T10:00:00Z'),
+    ('REPOSITORY', '', 'gitlab:acme/web', 'acme/web', 'gitlab', 40, 'LOW', '2026-09-15T10:00:00Z', '2026-09-15T10:00:00Z'),
+    ('REPOSITORY', '', 'unknown:acme/old', 'acme/old', NULL, 10, 'LOW', '2026-09-13T10:00:00Z', '2026-09-13T10:00:00Z');`;
+
+test("one platform emits no PLATFORM node and no HOSTED_ON edge", () => {
+  for (const mode of ["public", "private"]) {
+    const graph = build(mode);
+    assert.equal(find(graph, "PLATFORM").length, 0, `${mode} emitted a lone platform`);
+    assert.ok(!graph.edges.some((edge) => edge.type === "HOSTED_ON"), `${mode} emitted HOSTED_ON`);
+  }
+});
+
+test("two platforms emit one PLATFORM each and host every repository on its own", () => {
+  const graph = buildMini("private", MULTI_PLATFORM);
+  assert.deepEqual(find(graph, "PLATFORM").map(label), ["github", "gitlab"]);
+  assert.deepEqual(pairs(graph, "HOSTED_ON", label, label),
+    [["acme/api", "github"], ["acme/web", "gitlab"]]);
+});
+
+test("a repository with no platform is neither hosted nor counted as a platform", () => {
+  const graph = buildMini("private", MULTI_PLATFORM);
+  assert.equal(find(graph, "PLATFORM").length, 2);
+  assert.ok(!pairs(graph, "HOSTED_ON", label, label).some(([repository]) => repository === "acme/old"));
+});
+
+test("a PLATFORM spans its repositories' sightings at zero severity", () => {
+  const github = find(buildMini("private", MULTI_PLATFORM), "PLATFORM").find((node) => node.label === "github");
+  assert.deepEqual(
+    { severity: github.severity, band: github.band, firstSeen: github.firstSeen, lastSeen: github.lastSeen },
+    { severity: 0, band: "LOW", firstSeen: "2026-09-14T10:00:00Z", lastSeen: "2026-09-16T10:00:00Z" });
+});
+
+test("public keeps PLATFORM and HOSTED_ON, a platform naming nobody", () => {
+  const graph = buildMini("public", MULTI_PLATFORM);
+  assert.equal(find(graph, "PLATFORM").length, 2);
+  assert.equal(graph.edges.filter((edge) => edge.type === "HOSTED_ON").length, 2);
 });

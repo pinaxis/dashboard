@@ -125,6 +125,33 @@ function emitFile(file, { isPublic, rowsById }) {
   return isPublic ? node : { ...node, path: file.path };
 }
 
+function derivePlatforms(rows) {
+  const byName = new Map();
+  for (const row of rows.filter((candidate) => candidate.type === "REPOSITORY" && candidate.platform)) {
+    if (!byName.has(row.platform)) {
+      byName.set(row.platform, []);
+    }
+    byName.get(row.platform).push(row);
+  }
+  if (byName.size < 2) {
+    return [];
+  }
+  return [...byName.entries()]
+    .sort(([a], [b]) => compareText(a, b))
+    .map(([name, repositories]) => ({ name, repositories }));
+}
+
+function emitPlatform(platform) {
+  return {
+    type: "PLATFORM",
+    severity: 0,
+    band: "LOW",
+    firstSeen: platform.repositories.map((row) => row.first_seen).reduce(earliest),
+    lastSeen: platform.repositories.map((row) => row.last_seen).reduce(latest),
+    label: platform.name,
+  };
+}
+
 function emitEdge(row, { isPublic, indexById, fileIndex }) {
   const edge = { s: indexById.get(row.src), t: indexById.get(row.dst), type: row.type,
     weight: row.weight, severity: row.severity };
@@ -154,10 +181,13 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
     .filter((row) => indexById.has(row.src) && indexById.has(row.dst));
   const files = deriveFiles(edgeRows);
   const fileIndex = new Map(files.map((file, offset) => [file.key, rows.length + offset]));
+  const platforms = derivePlatforms(rows);
+  const platformStart = rows.length + files.length;
 
   const nodes = [
     ...rows.map((row) => emitNode(row, { isPublic, pseudonym, maintainerCounts })),
     ...files.map((file) => emitFile(file, { isPublic, rowsById })),
+    ...platforms.map(emitPlatform),
   ];
 
   if (isPublic) {
@@ -174,6 +204,8 @@ export function buildGraph(db, { mode, pseudonym, schemaVersion }) {
       const t = fileIndex.get(file.key);
       return { s: indexById.get(file.repository), t, type: "CONTAINS", weight: 1, severity: nodes[t].severity };
     }),
+    ...platforms.flatMap((platform, offset) => platform.repositories.map((row) => ({
+      s: indexById.get(row.id), t: platformStart + offset, type: "HOSTED_ON", weight: 1, severity: 0 }))),
   ];
 
   const [latest] = all(db, "SELECT MAX(last_seen) AS ts FROM node");
