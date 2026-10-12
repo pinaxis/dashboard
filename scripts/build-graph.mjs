@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { loadSalt, createPseudonymizer } from "./lib/anonymize.mjs";
 import { buildGraph } from "./lib/graph.mjs";
+import { withLayout } from "./lib/layout.mjs";
 
 const require = createRequire(import.meta.url);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -53,7 +54,7 @@ try {
     schemaVersion,
   });
   db.close();
-  const document = { ...graph, dataset: tag, generatedAt: new Date().toISOString() };
+  const document = withLayout({ ...graph, dataset: tag, generatedAt: new Date().toISOString() });
   rmSync(join(root, "public", "pinaxis.db"), { force: true });
   rmSync(join(root, "public", "summary.json"), { force: true });
   writeFileSync(join(root, "public", "graph.json"), JSON.stringify(document));
