@@ -10,7 +10,7 @@ import { buildGraph } from "./lib/graph.mjs";
 const require = createRequire(import.meta.url);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MODE = process.argv[2] === "private" ? "private" : "public";
-const REPO = "intisy/pinaxis";
+const REPO = "pinaxis/pinaxis";
 
 /**
  * @remarks resolving the highest dataset-v<N> release means a schema bump in pinaxis repoints the

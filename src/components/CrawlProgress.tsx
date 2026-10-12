@@ -3,7 +3,7 @@ import type { GraphDocument } from "../data/graph";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
 
-const REPO_URL = (import.meta.env.VITE_REPO_URL as string) || "https://github.com/intisy/pinaxis";
+const REPO_URL = (import.meta.env.VITE_REPO_URL as string) || "https://github.com/pinaxis/pinaxis";
 
 function percentColor(percent: number): string {
   if (percent >= 100) {
