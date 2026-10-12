@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,10 +79,18 @@ try {
   const document = MODE === "private"
     ? withLayout({ ...base, generatedAt: now })
     : { ...base, generatedAt: now.slice(0, 10) };
-  rmSync(join(root, "public", "pinaxis.db"), { force: true });
-  rmSync(join(root, "public", "summary.json"), { force: true });
-  writeFileSync(join(root, "public", "graph.json"), JSON.stringify(document));
-  console.log(`wrote ${MODE} graph.json (${graph.nodes.length} nodes, ${graph.edges.length} edges)`);
+  const output = MODE === "private"
+    ? join(root, "dist-private", "api", "graph.json")
+    : join(root, "public", "graph.json");
+  if (MODE === "private") {
+    rmSync(join(root, "dist-private"), { recursive: true, force: true });
+  } else {
+    rmSync(join(root, "public", "pinaxis.db"), { force: true });
+    rmSync(join(root, "public", "summary.json"), { force: true });
+  }
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, JSON.stringify(document));
+  console.log(`wrote ${MODE} graph to ${output} (${graph.nodes.length} nodes, ${graph.edges.length} edges)`);
 } finally {
   if (dir) {
     rmSync(dir, { recursive: true, force: true });

@@ -69,7 +69,7 @@ export async function handle(request: Request, deps: Deps): Promise<Response> {
   if (!(await deps.verify(request.headers.get("Cf-Access-Jwt-Assertion")))) {
     return reply(403, { error: "not signed in through Access" });
   }
-  const action = new URL(request.url).pathname.replace(/^\/private\/api\/crawl\/?/, "");
+  const action = new URL(request.url).pathname.replace(/^\/api\/crawl\/?/, "");
   if (request.method === "GET" && action === "") {
     return guarded(200, () => deps.github.status());
   }

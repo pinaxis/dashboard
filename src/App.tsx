@@ -9,15 +9,12 @@ import { PublicDashboard } from "./components/PublicDashboard";
 import { loadGraph, isPublicDocument, type GraphDocument, type PublicDocument } from "./data/graph";
 import { BAND_ORDER, BAND_COLOR, TYPE_ORDER, TYPE_COLOR, STATUS, INK } from "./lib/palette";
 import { relativeTime } from "./lib/format";
+import { probeSession, LOGIN_URL, LOGOUT_URL } from "./data/session";
 
 type View = "graph" | "charts" | "crawl" | "search";
 type Mode = "public" | "private";
-type Gate = "idle" | "loading" | "blocked";
 
 const PUBLIC_URL = `${import.meta.env.BASE_URL}graph.json`;
-/** Cloudflare Access serves this on every protected host; it ends the session the private data rides on. */
-const LOGOUT_URL = "/cdn-cgi/access/logout";
-const PRIVATE_URL = (import.meta.env.VITE_PRIVATE_URL as string) || `${import.meta.env.BASE_URL}graph.private.json`;
 
 const VERIFY = [
   { id: "live", label: "confirmed live", color: STATUS.critical, key: "validatedLive" as const },
@@ -48,7 +45,6 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("graph");
   const [mode, setMode] = useState<Mode>("public");
-  const [gate, setGate] = useState<Gate>("idle");
 
   useEffect(() => {
     loadGraph(PUBLIC_URL)
@@ -59,6 +55,12 @@ export default function App() {
         setPublicData(document);
       })
       .catch((cause: Error) => setError(cause.message));
+    probeSession().then((document) => {
+      if (document) {
+        setPrivateData(document);
+        setMode("private");
+      }
+    });
   }, []);
 
   const logOut = useCallback(() => {
@@ -74,28 +76,12 @@ export default function App() {
   const showPublic = useCallback(() => {
     setMode("public");
     setSelected(null);
-    setGate("idle");
   }, []);
 
-  const showPrivate = useCallback(async () => {
+  const showPrivate = useCallback(() => {
     setSelected(null);
-    if (privateData) {
-      setMode("private");
-      return;
-    }
-    setGate("loading");
-    try {
-      const document = await loadGraph(PRIVATE_URL, { credentials: "include", cache: "no-store" });
-      if (isPublicDocument(document)) {
-        throw new Error("the private view returned a public document");
-      }
-      setPrivateData(document);
-      setMode("private");
-      setGate("idle");
-    } catch {
-      setGate("blocked");
-    }
-  }, [privateData]);
+    setMode("private");
+  }, []);
 
   const clear = useCallback(() => setSelected(null), []);
   const openNode = useCallback((index: string) => {
@@ -162,14 +148,16 @@ export default function App() {
         )}
       </nav>
       <div className="controls">
-        <div className="toggle" role="group" aria-label="Disclosure">
-          <button type="button" className={`tab ${mode === "public" ? "tab-on" : ""}`} aria-pressed={mode === "public"} onClick={showPublic}>Public</button>
-          <button type="button" className={`tab ${mode === "private" ? "tab-on" : ""}`} aria-pressed={mode === "private"} onClick={showPrivate}>
-            <span aria-hidden="true">🔒</span> Private
-          </button>
-        </div>
-        {privateData && (
-          <button type="button" className="tab" onClick={logOut}>Log out</button>
+        {privateData ? (
+          <>
+            <div className="toggle" role="group" aria-label="Disclosure">
+              <button type="button" className={`tab ${mode === "public" ? "tab-on" : ""}`} aria-pressed={mode === "public"} onClick={showPublic}>Public</button>
+              <button type="button" className={`tab ${mode === "private" ? "tab-on" : ""}`} aria-pressed={mode === "private"} onClick={showPrivate}>Private</button>
+            </div>
+            <button type="button" className="tab" onClick={logOut}>Log out</button>
+          </>
+        ) : (
+          <a className="tab" href={LOGIN_URL}>Sign in</a>
         )}
       </div>
     </header>
@@ -232,21 +220,6 @@ export default function App() {
         <span>{data.dataset ?? "current dataset"}</span>
         <span>updated {relativeTime(data.stats.lastSeen)}</span>
       </footer>
-      {gate === "blocked" && (
-        <div className="gate" role="dialog" aria-modal="true" aria-label="Private view protected">
-          <div className="gate-card">
-            <h2>Private view is protected</h2>
-            <p>
-              The private graph carries real repository and owner names, maintainers, and masked secret
-              values. It is served only to authorized accounts behind Cloudflare Access.
-            </p>
-            <div className="gate-actions">
-              <a className="gate-primary" href={PRIVATE_URL} target="_blank" rel="noreferrer">Sign in to the secure view</a>
-              <button type="button" className="gate-secondary" onClick={showPublic}>Stay on public</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
