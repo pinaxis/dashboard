@@ -4,7 +4,7 @@ const PUBLIC_EDGE_TYPES = new Set(["LEAKED_IN", "USED_IN", "OWNED_BY", "CONTAINS
 const PATH_BEARING_EDGES = new Set(["LEAKED_IN", "USED_IN"]);
 const PSEUDONYM_PREFIX = { REPOSITORY: "repo", OWNER: "owner" };
 
-function all(db, sql) {
+export function all(db, sql) {
   const statement = db.prepare(sql);
   const out = [];
   while (statement.step()) {
@@ -89,7 +89,7 @@ function tally(items, keyOf) {
   return out;
 }
 
-const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+export const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const earliest = (a, b) => (b < a ? b : a);
 const latest = (a, b) => (b > a ? b : a);
 const fileKey = (repository, path) => `${repository}\u0000${path}`;
