@@ -14,6 +14,8 @@ type Mode = "public" | "private";
 type Gate = "idle" | "loading" | "blocked";
 
 const PUBLIC_URL = `${import.meta.env.BASE_URL}graph.json`;
+/** Cloudflare Access serves this on every protected host; it ends the session the private data rides on. */
+const LOGOUT_URL = "/cdn-cgi/access/logout";
 const PRIVATE_URL = (import.meta.env.VITE_PRIVATE_URL as string) || `${import.meta.env.BASE_URL}graph.private.json`;
 
 const VERIFY = [
@@ -49,6 +51,16 @@ export default function App() {
 
   useEffect(() => {
     loadGraph(PUBLIC_URL).then(setPublicData).catch((cause: Error) => setError(cause.message));
+  }, []);
+
+  const logOut = useCallback(() => {
+    setSelected(null);
+    setPrivateData(null);
+    setMode("public");
+    setView("graph");
+    if (!import.meta.env.DEV) {
+      window.location.assign(LOGOUT_URL);
+    }
   }, []);
 
   const showPublic = useCallback(() => {
@@ -146,6 +158,9 @@ export default function App() {
               <span aria-hidden="true">🔒</span> Private
             </button>
           </div>
+          {privateData && (
+            <button type="button" className="tab" onClick={logOut}>Log out</button>
+          )}
         </div>
       </header>
       {view === "graph" && (
