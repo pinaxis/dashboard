@@ -5,7 +5,8 @@ import { Chips, type ChipItem } from "./components/Chips";
 import { Analytics } from "./components/Analytics";
 import { CrawlProgress } from "./components/CrawlProgress";
 import { Search } from "./components/Search";
-import { loadGraph, type GraphDocument } from "./data/graph";
+import { PublicDashboard } from "./components/PublicDashboard";
+import { loadGraph, isPublicDocument, type GraphDocument, type PublicDocument } from "./data/graph";
 import { BAND_ORDER, BAND_COLOR, TYPE_ORDER, TYPE_COLOR, STATUS, INK } from "./lib/palette";
 import { relativeTime } from "./lib/format";
 
@@ -14,6 +15,8 @@ type Mode = "public" | "private";
 type Gate = "idle" | "loading" | "blocked";
 
 const PUBLIC_URL = `${import.meta.env.BASE_URL}graph.json`;
+/** Cloudflare Access serves this on every protected host; it ends the session the private data rides on. */
+const LOGOUT_URL = "/cdn-cgi/access/logout";
 const PRIVATE_URL = (import.meta.env.VITE_PRIVATE_URL as string) || `${import.meta.env.BASE_URL}graph.private.json`;
 
 const VERIFY = [
@@ -36,7 +39,7 @@ function toggleIn(setter: (update: (previous: Set<string>) => Set<string>) => vo
 }
 
 export default function App() {
-  const [publicData, setPublicData] = useState<GraphDocument | null>(null);
+  const [publicData, setPublicData] = useState<PublicDocument | null>(null);
   const [privateData, setPrivateData] = useState<GraphDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bands, setBands] = useState<Set<string>>(() => new Set(BAND_ORDER));
@@ -48,7 +51,24 @@ export default function App() {
   const [gate, setGate] = useState<Gate>("idle");
 
   useEffect(() => {
-    loadGraph(PUBLIC_URL).then(setPublicData).catch((cause: Error) => setError(cause.message));
+    loadGraph(PUBLIC_URL)
+      .then((document) => {
+        if (!isPublicDocument(document)) {
+          throw new Error("the public graph is not an aggregates-only document");
+        }
+        setPublicData(document);
+      })
+      .catch((cause: Error) => setError(cause.message));
+  }, []);
+
+  const logOut = useCallback(() => {
+    setSelected(null);
+    setPrivateData(null);
+    setMode("public");
+    setView("graph");
+    if (!import.meta.env.DEV) {
+      window.location.assign(LOGOUT_URL);
+    }
   }, []);
 
   const showPublic = useCallback(() => {
@@ -66,6 +86,9 @@ export default function App() {
     setGate("loading");
     try {
       const document = await loadGraph(PRIVATE_URL, { credentials: "include", cache: "no-store" });
+      if (isPublicDocument(document)) {
+        throw new Error("the private view returned a public document");
+      }
       setPrivateData(document);
       setMode("private");
       setGate("idle");
@@ -86,7 +109,7 @@ export default function App() {
     }
   }, [mode, view]);
 
-  const data = mode === "private" ? privateData : publicData;
+  const data = privateData;
 
   const filters = useMemo(() => {
     if (!data) {
@@ -115,39 +138,66 @@ export default function App() {
   if (error) {
     return <div className="state">Could not load the exposure graph. {error}</div>;
   }
+  if (mode === "public" ? !publicData : !data) {
+    return <div className="state">Charting the exposure graph…</div>;
+  }
+
+  const header = (
+    <header className="masthead">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true" />
+        <div className="brand-words">
+          <h1>Pinaxis</h1>
+          <p>Exposure across public code, drawn as one graph</p>
+        </div>
+      </div>
+      <nav className="tabs" aria-label="View">
+        {mode === "private" && (
+          <>
+            <button type="button" className={`tab ${view === "graph" ? "tab-on" : ""}`} aria-pressed={view === "graph"} onClick={() => setView("graph")}>Graph</button>
+            <button type="button" className={`tab ${view === "charts" ? "tab-on" : ""}`} aria-pressed={view === "charts"} onClick={() => setView("charts")}>Charts</button>
+            <button type="button" className={`tab ${view === "search" ? "tab-on" : ""}`} aria-pressed={view === "search"} onClick={() => setView("search")}>Search</button>
+            <button type="button" className={`tab ${view === "crawl" ? "tab-on" : ""}`} aria-pressed={view === "crawl"} onClick={() => setView("crawl")}>Crawl</button>
+          </>
+        )}
+      </nav>
+      <div className="controls">
+        <div className="toggle" role="group" aria-label="Disclosure">
+          <button type="button" className={`tab ${mode === "public" ? "tab-on" : ""}`} aria-pressed={mode === "public"} onClick={showPublic}>Public</button>
+          <button type="button" className={`tab ${mode === "private" ? "tab-on" : ""}`} aria-pressed={mode === "private"} onClick={showPrivate}>
+            <span aria-hidden="true">🔒</span> Private
+          </button>
+        </div>
+        {privateData && (
+          <button type="button" className="tab" onClick={logOut}>Log out</button>
+        )}
+      </div>
+    </header>
+  );
+
+  if (mode === "public") {
+    return (
+      <div className="app">
+        {header}
+        <main className="stage stage-scroll">
+          {publicData && <PublicDashboard document={publicData} />}
+        </main>
+        <footer className="footer">
+          <span>public view</span>
+          <span>{publicData?.dataset ?? "current dataset"}</span>
+          <span>as of {publicData?.stats.asOf ?? "unknown"}</span>
+        </footer>
+      </div>
+    );
+  }
+
   if (!data) {
     return <div className="state">Charting the exposure graph…</div>;
   }
 
   return (
     <div className="app">
-      <header className="masthead">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <div className="brand-words">
-            <h1>Pinaxis</h1>
-            <p>Exposure across public code, drawn as one graph</p>
-          </div>
-        </div>
-        <nav className="tabs" aria-label="View">
-          <button type="button" className={`tab ${view === "graph" ? "tab-on" : ""}`} aria-pressed={view === "graph"} onClick={() => setView("graph")}>Graph</button>
-          <button type="button" className={`tab ${view === "charts" ? "tab-on" : ""}`} aria-pressed={view === "charts"} onClick={() => setView("charts")}>Charts</button>
-          {mode === "private" && (
-            <button type="button" className={`tab ${view === "search" ? "tab-on" : ""}`} aria-pressed={view === "search"} onClick={() => setView("search")}>Search</button>
-          )}
-          {mode === "private" && (
-            <button type="button" className={`tab ${view === "crawl" ? "tab-on" : ""}`} aria-pressed={view === "crawl"} onClick={() => setView("crawl")}>Crawl</button>
-          )}
-        </nav>
-        <div className="controls">
-          <div className="toggle" role="group" aria-label="Disclosure">
-            <button type="button" className={`tab ${mode === "public" ? "tab-on" : ""}`} aria-pressed={mode === "public"} onClick={showPublic}>Public</button>
-            <button type="button" className={`tab ${mode === "private" ? "tab-on" : ""}`} aria-pressed={mode === "private"} onClick={showPrivate}>
-              <span aria-hidden="true">🔒</span> Private
-            </button>
-          </div>
-        </div>
-      </header>
+      {header}
       {view === "graph" && (
         <div className="toolbar">
           <Chips label="Severity" items={filters.severity} active={bands} onToggle={toggleIn(setBands)} />

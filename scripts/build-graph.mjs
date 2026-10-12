@@ -8,6 +8,7 @@ import { loadSalt, createPseudonymizer } from "./lib/anonymize.mjs";
 import { buildGraph } from "./lib/graph.mjs";
 import { buildCrawl } from "./lib/crawl.mjs";
 import { withLayout } from "./lib/layout.mjs";
+import { buildPublicGraph, defaultPolicy } from "./lib/public.mjs";
 
 const require = createRequire(import.meta.url);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,17 +63,24 @@ try {
   const initSqlJs = require("sql.js");
   const SQL = await initSqlJs();
   const db = new SQL.Database(readFileSync(path));
-  const graph = buildGraph(db, {
-    mode: MODE,
-    pseudonym: createPseudonymizer(salt, schemaVersion),
-    schemaVersion,
-  });
+  let graph;
   if (MODE === "private") {
+    graph = buildGraph(db, { mode: MODE, pseudonym: createPseudonymizer(salt, schemaVersion), schemaVersion });
     const { createdAt: since } = gh(["release", "view", tag, "--repo", REPO, "--json", "createdAt"]);
     graph.crawl = buildCrawl(db, { dataset: tag, since, runs: crawlRuns(since) });
+  } else {
+    graph = buildPublicGraph(db, defaultPolicy());
+    graph.schema = schemaVersion;
   }
   db.close();
-  const document = withLayout({ ...graph, dataset: tag, generatedAt: new Date().toISOString() });
+  // Public day-rounds generatedAt; the gate forbids a clock timestamp anywhere in a public document.
+  // Layout is private only: the public category graph seeds and settles its own positions in the
+  // browser, and a stored x/y would add fields the public gate rejects.
+  const now = new Date().toISOString();
+  const base = { ...graph, dataset: tag };
+  const document = MODE === "private"
+    ? withLayout({ ...base, generatedAt: now })
+    : { ...base, generatedAt: now.slice(0, 10) };
   rmSync(join(root, "public", "pinaxis.db"), { force: true });
   rmSync(join(root, "public", "summary.json"), { force: true });
   writeFileSync(join(root, "public", "graph.json"), JSON.stringify(document));

@@ -43,6 +43,13 @@ export const BAND_COLOR: Record<string, string> = {
 };
 
 // Node type is an identity, so it wears a fixed categorical slot, assigned once and never cycled.
+export const CATEGORY_COLOR: Record<string, string> = {
+  credential: SERIES[0],
+  extension: SERIES[1],
+  band: SERIES[2],
+  repositories: SERIES[3],
+};
+
 export const TYPE_ORDER = ["SECRET", "REPOSITORY", "OWNER", "PACKAGE", "MAINTAINER", "PLATFORM", "FILE"] as const;
 export type NodeTypeName = (typeof TYPE_ORDER)[number];
 export const TYPE_COLOR: Record<string, string> = {

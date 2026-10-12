@@ -1,8 +1,8 @@
-import type Graph from "graphology";
-import type { GraphDocument } from "../data/graph";
-import { nodeName } from "../data/graph";
-import { BAND_COLOR, TYPE_COLOR, INK } from "../lib/palette";
-import { hasStoredLayout, settle, topology } from "./settle";
+import Graph from "graphology";
+import type { CategoryEdge, CategoryNode, GraphDocument } from "../data/graph.ts";
+import { nodeName } from "../data/graph.ts";
+import { BAND_COLOR, CATEGORY_COLOR, TYPE_COLOR, INK } from "../lib/palette.ts";
+import { hasStoredLayout, settle, topology } from "./settle.ts";
 
 const MIN_SIZE = 2.5;
 const MAX_SIZE = 30;
@@ -58,5 +58,38 @@ export function buildScene(document: GraphDocument): Graph {
   if (!stored) {
     settle(graph);
   }
+  return graph;
+}
+
+export function categoryColor(kind: string): string {
+  return CATEGORY_COLOR[kind] ?? INK.muted;
+}
+
+export function categorySize(count: number, widest: number): number {
+  const scale = Math.sqrt(count / Math.max(1, widest));
+  return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * scale;
+}
+
+export function buildCategoryScene(document: { nodes: CategoryNode[]; edges: CategoryEdge[] }): Graph {
+  const graph = new Graph();
+  const widest = Math.max(1, ...document.nodes.map((node) => node.count));
+  document.nodes.forEach((node, index) => {
+    graph.addNode(String(index), {
+      label: `${node.label} (${node.count})`,
+      nodeType: node.kind,
+      color: categoryColor(node.kind),
+      borderColor: categoryColor(node.kind),
+      size: categorySize(node.count, widest),
+      x: Math.cos(index) * (1 + (index % 7)),
+      y: Math.sin(index) * (1 + (index % 5)),
+      forceLabel: true,
+    });
+  });
+  document.edges.forEach((edge) => {
+    if (!graph.hasEdge(String(edge.s), String(edge.t))) {
+      graph.addEdge(String(edge.s), String(edge.t), { size: 0.9, color: EDGE_COLOR, weight: edge.weight });
+    }
+  });
+  settle(graph);
   return graph;
 }
