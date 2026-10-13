@@ -33,6 +33,8 @@ export interface GitHub {
   start(inputs: StartInputs): Promise<void>;
   pause(): Promise<void>;
   cancelCurrent(): Promise<string[]>;
+  getVariable(name: string): Promise<string | null>;
+  setVariable(name: string, value: string): Promise<void>;
 }
 
 export type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -156,7 +158,35 @@ export function gitHub(token: string, fetcher: Fetcher, repo = "pinaxis/pinaxis"
     throw failure("/git/refs", init, response);
   }
 
+  async function getVariable(name: string): Promise<string | null> {
+    const response = await send(`/actions/variables/${name}`);
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw failure(`/actions/variables/${name}`, {}, response);
+    }
+    return ((await response.json()) as { value: string }).value;
+  }
+
+  async function setVariable(name: string, value: string): Promise<void> {
+    const patch = await send(`/actions/variables/${name}`,
+      { method: "PATCH", body: JSON.stringify({ name, value }) });
+    if (patch.ok) {
+      return;
+    }
+    if (patch.status !== 404) {
+      throw failure(`/actions/variables/${name}`, { method: "PATCH" }, patch);
+    }
+    const created = await send("/actions/variables", { method: "POST", body: JSON.stringify({ name, value }) });
+    if (!created.ok) {
+      throw failure("/actions/variables", { method: "POST" }, created);
+    }
+  }
+
   return {
+    getVariable,
+    setVariable,
     async status() {
       const [lock, paused, runs] = await Promise.all([lockState(), isPaused(), listRuns()]);
       const active = runs.filter((run) => ACTIVE.has(run.status));

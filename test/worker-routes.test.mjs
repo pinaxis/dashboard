@@ -27,12 +27,13 @@ function deps({ signedIn = true, github = {} } = {}) {
 function request(path, { method = "GET", body, origin = ORIGIN, type = "application/json", token = "jwt" } = {}) {
   const headers = new Headers();
   if (token) headers.set("Cf-Access-Jwt-Assertion", token);
-  if (method === "POST") {
+  const sends = method !== "GET";
+  if (sends) {
     if (origin) headers.set("Origin", origin);
     if (type) headers.set("Content-Type", type);
   }
   return new Request(`${ORIGIN}/api/crawl${path}`,
-    { method, headers, body: method === "POST" ? JSON.stringify(body ?? {}) : undefined });
+    { method, headers, body: sends ? JSON.stringify(body ?? {}) : undefined });
 }
 
 const json = async (response) => [response.status, await response.json()];
@@ -101,6 +102,35 @@ test("validateStart accepts a full crawl with nothing else, and a comma list of 
 test("an unknown action is a 404 and a wrong method a 405", async () => {
   assert.equal((await handle(request("/explode", { method: "POST" }), deps().deps)).status, 404);
   assert.equal((await handle(request("/pause"), deps().deps)).status, 405);
+});
+
+test("GET /api/crawl/priorities returns the parsed weights when signed in", async () => {
+  const { deps: open } = deps({ github: { getVariable: async () => "github-token:8,openai-api-key:4" } });
+  const response = await handle(request("/priorities"), open);
+  assert.deepEqual(await json(response), [200, { weights: { "github-token": 8, "openai-api-key": 4 } }]);
+});
+
+test("PUT /api/crawl/priorities validates, then writes the variable", async () => {
+  let wrote = null;
+  const setVariable = async (_name, value) => { wrote = value; };
+
+  const bad = await handle(request("/priorities", { method: "PUT", body: { weights: { "github-token": 0 } } }),
+    deps({ github: { setVariable } }).deps);
+  assert.equal(bad.status, 400);
+  assert.equal(wrote, null);
+
+  const ok = await handle(request("/priorities", { method: "PUT", body: { weights: { "github-token": 9 } } }),
+    deps({ github: { setVariable } }).deps);
+  assert.deepEqual(await json(ok), [200, { saved: true }]);
+  assert.equal(wrote, "github-token:9");
+});
+
+test("priorities refuse a signed-out caller and a cross-origin PUT", async () => {
+  const { deps: denied } = deps({ signedIn: false });
+  assert.equal((await handle(request("/priorities"), denied)).status, 403);
+  const { deps: open } = deps();
+  assert.equal((await handle(request("/priorities", { method: "PUT", origin: "https://evil.test",
+    body: { weights: {} } }), open)).status, 403);
 });
 
 const env = (assets) => ({ ASSETS: { fetch: assets }, GITHUB_TOKEN: "t",

@@ -1,4 +1,5 @@
 import type { GitHub, StartInputs } from "./github.ts";
+import { parseWeights, formatWeights, validateWeights } from "./priorities.ts";
 
 export interface Deps {
   github: GitHub;
@@ -72,6 +73,25 @@ export async function handle(request: Request, deps: Deps): Promise<Response> {
   const action = new URL(request.url).pathname.replace(/^\/api\/crawl\/?/, "");
   if (request.method === "GET" && action === "") {
     return guarded(200, () => deps.github.status());
+  }
+  if (action === "priorities") {
+    if (request.method === "GET") {
+      return reply(200, { weights: parseWeights(await deps.github.getVariable("PINAXIS_WEIGHTS")) });
+    }
+    if (request.method === "PUT") {
+      if (!isSameSiteJson(request, deps.origin)) {
+        return reply(403, { error: "cross-site or non-JSON request refused" });
+      }
+      const weights = validateWeights(await readJson(request));
+      if (typeof weights === "string") {
+        return reply(400, { error: weights });
+      }
+      return guarded(200, async () => {
+        await deps.github.setVariable("PINAXIS_WEIGHTS", formatWeights(weights));
+        return { saved: true };
+      });
+    }
+    return reply(405, { error: "method not allowed" });
   }
   if (request.method !== "POST") {
     return reply(405, { error: "method not allowed" });
