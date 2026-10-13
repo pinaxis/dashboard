@@ -4,7 +4,6 @@ import { createNodeBorderProgram } from "@sigma/node-border";
 import Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
 import { buildModel } from "../graph/model";
-import { computeWindow } from "../graph/window";
 import type { ColorMode } from "../graph/scene";
 import { DIM, INK } from "../lib/palette";
 
@@ -17,16 +16,10 @@ const NodeBorder = createNodeBorderProgram({
 
 const EDGE_COLOR = "#2b2a27";
 const LIT_EDGE = "#6f6e66";
-// The maintainer social graph is 84% of all edges; drawing its mesh is what makes a zoomed-in region
-// lag. Only the exposure edges are drawn ambiently; a node's social links appear when it is selected.
+// The exposure graph loads once and never changes as you pan or zoom, so navigation is pure camera
+// movement. The maintainer social layer (74% of nodes, 84% of edges) is drawn only around a selected
+// node, which is what kept the whole graph from being loaded at once.
 const SOCIAL_EDGE = new Set(["FOLLOWS", "CO_MAINTAINS", "MAINTAINS"]);
-// The renderer never holds more than this many nodes; the window follows the viewport, so the rest of
-// the dataset is reached by navigating to it rather than loaded all at once.
-const WINDOW_CAP = 2500;
-// The handful of nodes (high-severity exposures and the biggest hubs) that are always loaded, so they
-// stay on the overview and reappear wherever you pan.
-const ALWAYS_LOADED = 0.6;
-const RETARGET_MS = 120;
 
 const RELATION: Record<string, string> = {
   LEAKED_IN: "leaked in",
@@ -59,7 +52,7 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const refocusRef = useRef<(skipIndexation: boolean) => void>(() => {});
-  const retargetRef = useRef<() => void>(() => {});
+  const revealRef = useRef<() => void>(() => {});
   const model = useMemo(() => buildModel(document), [document]);
 
   const bandsRef = useRef(activeBands);
@@ -78,26 +71,10 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     }
     const container = containerRef.current;
     const graph = new Graph();
-    const present = new Set<number>();
-
-    // Two hidden nodes at the dataset's corners pin Sigma's bounding box, which otherwise shifts as
-    // the window's nodes change; without them, changing the window moves the viewport, which changes
-    // the window, in a feedback loop.
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (let i = 0; i < model.count; i += 1) {
-      minX = Math.min(minX, model.x[i]);
-      minY = Math.min(minY, model.y[i]);
-      maxX = Math.max(maxX, model.x[i]);
-      maxY = Math.max(maxY, model.y[i]);
-    }
-    graph.addNode("corner-min", { x: minX, y: minY, size: 0, color: "#00000000", label: "", hidden: true });
-    graph.addNode("corner-max", { x: maxX, y: maxY, size: 0, color: "#00000000", label: "", hidden: true });
+    const onDemandNodes = new Set<number>();
 
     const addNode = (index: number): void => {
-      if (present.has(index)) {
+      if (graph.hasNode(String(index))) {
         return;
       }
       const style = model.style[index];
@@ -119,11 +96,10 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         forceLabel: style.forceLabel,
         zIndex: style.zIndex,
       });
-      present.add(index);
     };
     const addEdgesFor = (index: number, includeSocial: boolean): void => {
       for (const { j, edgeType } of model.neighbors[index]) {
-        if (!present.has(j) || (!includeSocial && SOCIAL_EDGE.has(edgeType))) {
+        if (!graph.hasNode(String(j)) || (!includeSocial && SOCIAL_EDGE.has(edgeType))) {
           continue;
         }
         const a = String(Math.min(index, j));
@@ -133,6 +109,36 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         }
       }
     };
+
+    // The static base: every exposure node and the exposure-edge mesh between them. Maintainers are
+    // left out until a node is selected.
+    for (let index = 0; index < model.count; index += 1) {
+      if (!model.onDemand[index]) {
+        addNode(index);
+      }
+    }
+    graph.forEachNode((node) => addEdgesFor(Number(node), false));
+
+    const reveal = (): void => {
+      for (const index of onDemandNodes) {
+        if (graph.hasNode(String(index))) {
+          graph.dropNode(String(index));
+        }
+      }
+      onDemandNodes.clear();
+      if (selectedRef.current !== null) {
+        const index = Number(selectedRef.current);
+        for (const { j } of model.neighbors[index]) {
+          if (model.onDemand[j] && !graph.hasNode(String(j))) {
+            addNode(j);
+            onDemandNodes.add(j);
+          }
+        }
+        addEdgesFor(index, true);
+      }
+      refocusRef.current(false);
+    };
+    revealRef.current = reveal;
 
     const nodeVisible = (node: string): boolean => {
       const attributes = graph.getNodeAttributes(node);
@@ -204,56 +210,6 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       },
     });
 
-    const viewportBounds = () => {
-      const topLeft = sigma.viewportToGraph({ x: 0, y: 0 });
-      const bottomRight = sigma.viewportToGraph({ x: container.clientWidth, y: container.clientHeight });
-      return {
-        minX: Math.min(topLeft.x, bottomRight.x),
-        maxX: Math.max(topLeft.x, bottomRight.x),
-        minY: Math.min(topLeft.y, bottomRight.y),
-        maxY: Math.max(topLeft.y, bottomRight.y),
-      };
-    };
-    const pinnedSet = (): Set<number> => {
-      const pinned = new Set<number>();
-      if (selectedRef.current !== null) {
-        const index = Number(selectedRef.current);
-        pinned.add(index);
-        for (const { j } of model.neighbors[index]) {
-          pinned.add(j);
-        }
-      }
-      return pinned;
-    };
-    let lastSelected: string | null = null;
-    const retarget = (): void => {
-      const want = computeWindow(model, viewportBounds(), ALWAYS_LOADED, WINDOW_CAP, pinnedSet());
-      let changed = selectedRef.current !== lastSelected;
-      lastSelected = selectedRef.current;
-      for (const index of present) {
-        if (!want.has(index)) {
-          graph.dropNode(String(index));
-          present.delete(index);
-          changed = true;
-        }
-      }
-      for (const index of want) {
-        if (!present.has(index)) {
-          addNode(index);
-          changed = true;
-        }
-      }
-      if (!changed) {
-        return;
-      }
-      const selectedIndex = selectedRef.current !== null ? Number(selectedRef.current) : null;
-      for (const index of want) {
-        addEdgesFor(index, index === selectedIndex);
-      }
-      refocusRef.current(false);
-    };
-    retargetRef.current = retarget;
-
     refocusRef.current = (skipIndexation) => {
       const focus = hoveredRef.current ?? selectedRef.current;
       neighborsRef.current = focus && graph.hasNode(focus) ? new Set(graph.neighbors(focus)) : new Set();
@@ -285,20 +241,13 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     sigma.on("clickNode", ({ node }) => onSelect(node));
     sigma.on("clickStage", () => onSelect(null));
 
-    const camera = sigma.getCamera();
-    let retargetTimer: number | undefined;
-    camera.on("updated", () => {
-      window.clearTimeout(retargetTimer);
-      retargetTimer = window.setTimeout(retarget, RETARGET_MS);
-    });
-
     sigmaRef.current = sigma;
 
-    retarget();
+    const camera = sigma.getCamera();
+    camera.setState({ ratio: 1.2 });
     camera.animatedReset({ duration: 600 });
 
     return () => {
-      window.clearTimeout(retargetTimer);
       sigma.kill();
       sigmaRef.current = null;
     };
@@ -308,8 +257,13 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     bandsRef.current = activeBands;
     typesRef.current = activeTypes;
     verifyRef.current = activeVerify;
+    const selectionChanged = selectedRef.current !== selected;
     selectedRef.current = selected;
-    retargetRef.current();
+    if (selectionChanged) {
+      revealRef.current();
+    } else {
+      refocusRef.current(false);
+    }
   }, [activeBands, activeTypes, activeVerify, selected]);
 
   useEffect(() => {
