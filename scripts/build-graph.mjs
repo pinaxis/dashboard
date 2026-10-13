@@ -91,6 +91,16 @@ try {
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, JSON.stringify(document));
   console.log(`wrote ${MODE} graph to ${output} (${graph.nodes.length} nodes, ${graph.edges.length} edges)`);
+  if (MODE === "private") {
+    const catalog = process.env.PINAXIS_CATALOG
+      ? readFileSync(resolve(process.env.PINAXIS_CATALOG), "utf8")
+      : execFileSync("gh",
+          ["api", "-H", "Accept: application/vnd.github.raw", "/repos/pinaxis/pinaxis/contents/catalog.json"],
+          { encoding: "utf8" });
+    JSON.parse(catalog);
+    writeFileSync(join(root, "dist-private", "api", "catalog.json"), catalog);
+    console.log("wrote private catalog to dist-private/api/catalog.json");
+  }
 } finally {
   if (dir) {
     rmSync(dir, { recursive: true, force: true });

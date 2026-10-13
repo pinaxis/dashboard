@@ -9,7 +9,9 @@ function site(overrides = {}) {
   const answers = {
     "/login": { status: 302, location: ACCESS },
     "/api/graph": { status: 302, location: ACCESS },
+    "/api/catalog": { status: 302, location: ACCESS },
     "/api/crawl": { status: 403 },
+    "/api/crawl/priorities": { status: 403 },
     "/private/graph.json": { status: 302, location: `${ORIGIN}/login` },
     "/graph.json": { status: 200, body: { mode: "public", nodes: [] } },
     ...overrides,
@@ -28,11 +30,11 @@ test("a correctly gated site has no failures, and nothing follows a redirect", a
   const { fetcher, seen } = site();
   assert.deepEqual(await checkLiveGated(ORIGIN, fetcher), []);
   assert.ok(seen.every(([, redirect]) => redirect === "manual"));
-  assert.equal(seen.length, 5);
+  assert.equal(seen.length, 7);
 });
 
 test("a 200 on any gated path is a failure naming the path", async () => {
-  for (const path of ["/login", "/api/graph", "/api/crawl", "/private/graph.json"]) {
+  for (const path of ["/login", "/api/graph", "/api/catalog", "/api/crawl", "/api/crawl/priorities", "/private/graph.json"]) {
     const failures = await checkLiveGated(ORIGIN, site({ [path]: { status: 200 } }).fetcher);
     assert.equal(failures.length, 1, path);
     assert.match(failures[0], new RegExp(path.replace(/\//g, "\\/")));

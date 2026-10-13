@@ -4,6 +4,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const GRAPH = "api/graph.json";
+const CATALOG = "api/catalog.json";
+const EXPECTED = [CATALOG, GRAPH];
 
 function filesUnder(directory) {
   return readdirSync(directory).flatMap((entry) => {
@@ -13,13 +15,14 @@ function filesUnder(directory) {
 }
 
 /**
- * @remarks the private Worker serves nothing but this file, and only after its own Access check; any
- * other file in the directory is unexplained, and the gate refuses it rather than guessing.
+ * @remarks the private Worker serves nothing but these two files, and only after its own Access
+ * check; any other file in the directory is unexplained, and the gate refuses it rather than
+ * guessing.
  */
 export function assertPrivateOnlyData(root) {
   const files = filesUnder(root).map((path) => relative(root, path).split("\\").join("/")).sort();
-  assert.deepEqual(files, [GRAPH],
-    `the private build must hold exactly ${GRAPH}, found: ${files.join(", ") || "nothing"}`);
+  assert.deepEqual(files, EXPECTED,
+    `the private build must hold exactly ${EXPECTED.join(" and ")}, found: ${files.join(", ") || "nothing"}`);
   const document = JSON.parse(readFileSync(join(root, GRAPH), "utf8"));
   assert.equal(document.mode, "private", `${GRAPH} is not a private-mode document`);
   return files.length;
@@ -28,5 +31,5 @@ export function assertPrivateOnlyData(root) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const count = assertPrivateOnlyData(join(root, process.argv[2] ?? "dist-private"));
-  console.log(`private build holds only ${GRAPH} (${count} file)`);
+  console.log(`private build holds only ${EXPECTED.join(" and ")} (${count} files)`);
 }

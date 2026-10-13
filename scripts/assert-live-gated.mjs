@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const ORIGIN = "https://pinaxis.intisy.dev";
-const GATED = ["/login", "/api/graph", "/api/crawl", "/private/graph.json"];
+const GATED = ["/login", "/api/graph", "/api/catalog", "/api/crawl", "/api/crawl/priorities", "/private/graph.json"];
 const LEGACY = "/private/graph.json";
 const ACCESS_LOGIN = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com\/cdn-cgi\/access\/login\//;
 
