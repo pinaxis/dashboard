@@ -1149,3 +1149,14 @@ button.hbar-label {
   padding: 2px;
   z-index: 5;
 }
+
+.ptable .th-sort {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0;
+}

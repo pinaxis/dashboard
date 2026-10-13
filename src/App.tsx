@@ -74,6 +74,7 @@ export default function App() {
 
   const logOut = useCallback(() => {
     setSelected(null);
+    setDetailType(null);
     setPrivateData(null);
     setMode("public");
     setView("graph");
@@ -103,6 +104,10 @@ export default function App() {
       setView("graph");
     }
   }, [mode, view]);
+
+  useEffect(() => {
+    setDetailType(null);
+  }, [view]);
 
   const data = privateData;
 
@@ -221,8 +226,11 @@ export default function App() {
         )}
         {view === "crawl" && (
           <main className="stage stage-scroll">
-            <CrawlProgress document={data} />
+            <CrawlProgress document={data} catalog={catalog} onOpenType={openType} />
           </main>
+        )}
+        {detailType && (
+          <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} onClose={() => setDetailType(null)} />
         )}
       </ErrorBoundary>
       <footer className="footer">
@@ -231,9 +239,6 @@ export default function App() {
         <span>{data.dataset ?? "current dataset"}</span>
         <span>updated {relativeTime(data.stats.lastSeen)}</span>
       </footer>
-      {detailType && (
-        <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} onClose={() => setDetailType(null)} />
-      )}
     </div>
   );
 }
