@@ -1221,3 +1221,7 @@ button.hbar-label {
   vertical-align: middle;
 }
 .run-bar span { display: block; height: 100%; }
+
+.toolbar-charts { margin-bottom: 14px; }
+.panel-switch { display: flex; gap: 6px; margin-bottom: 8px; }
+.recharts-surface { overflow: visible; }
