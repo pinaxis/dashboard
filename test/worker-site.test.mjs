@@ -101,6 +101,26 @@ test("a signed-in path the worker does not serve is a 404", async () => {
   assert.equal((await route(request("/api/other"), site().deps)).status, 404);
 });
 
+test("a signed-in /api/catalog serves the catalog asset, uncached and private", async () => {
+  const catalog = JSON.stringify([{ name: "github-token" }]);
+  const { deps, seen } = site({ asset: new Response(catalog) });
+  const response = await route(request("/api/catalog"), deps);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  assert.equal(response.headers.get("Content-Type"), "application/json");
+  assert.equal(seen.assets.at(-1), "/api/catalog.json");
+});
+
+test("a non-GET /api/catalog is 405 and a missing one is 503", async () => {
+  assert.equal((await route(request("/api/catalog", { method: "POST" }), site().deps)).status, 405);
+  const missing = site({ asset: new Response("nope", { status: 404 }) });
+  assert.equal((await route(request("/api/catalog"), missing.deps)).status, 503);
+});
+
+test("/api/catalog refuses a caller without a token", async () => {
+  assert.equal((await route(request("/api/catalog", { token: null }), site().deps)).status, 403);
+});
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("the private worker runs first on every request and owns exactly its three routes", () => {

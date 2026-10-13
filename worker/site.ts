@@ -7,9 +7,11 @@ export interface SiteDeps {
 
 const LOGIN = /^\/login\/?$/;
 const GRAPH = /^\/api\/graph\/?$/;
+const CATALOG = /^\/api\/catalog\/?$/;
 const CRAWL = /^\/api\/crawl(\/|$)/;
 const LEGACY = /^\/private(\/|$)/;
 const GRAPH_ASSET = "/api/graph.json";
+const CATALOG_ASSET = "/api/catalog.json";
 
 function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -22,13 +24,13 @@ function redirect(location: string): Response {
   return new Response(null, { status: 302, headers: { Location: location, "Cache-Control": "no-store" } });
 }
 
-async function privateGraph(request: Request, deps: SiteDeps): Promise<Response> {
+async function privateAsset(request: Request, deps: SiteDeps, assetPath: string, missing: string): Promise<Response> {
   if (request.method !== "GET") {
     return reply(405, { error: "method not allowed" });
   }
-  const asset = await deps.assets.fetch(new Request(new URL(GRAPH_ASSET, request.url)));
+  const asset = await deps.assets.fetch(new Request(new URL(assetPath, request.url)));
   if (!asset.ok) {
-    return reply(503, { error: "the private graph is not deployed" });
+    return reply(503, { error: missing });
   }
   return new Response(asset.body, {
     status: 200,
@@ -53,7 +55,10 @@ export async function route(request: Request, deps: SiteDeps): Promise<Response>
     return redirect(`${deps.origin}/`);
   }
   if (GRAPH.test(path)) {
-    return privateGraph(request, deps);
+    return privateAsset(request, deps, GRAPH_ASSET, "the private graph is not deployed");
+  }
+  if (CATALOG.test(path)) {
+    return privateAsset(request, deps, CATALOG_ASSET, "the catalog is not deployed");
   }
   if (CRAWL.test(path)) {
     return deps.crawl(request);
