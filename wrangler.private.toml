@@ -2,23 +2,22 @@ name = "pinaxis-dashboard-private"
 account_id = "08952a642151a64b2034c43b4965036a"
 compatibility_date = "2026-09-16"
 main = "worker/index.ts"
-# No workers.dev address. The only way in is /private on the shared host, which a Cloudflare Access
-# application on the intisy account protects. An Access policy is bound to a hostname and path, so a
-# second address would be a second way to the same data with no gate on it.
+# No workers.dev address: an Access policy is bound to a hostname and path, so a second address would
+# be a second way to the same data with no gate on it.
 workers_dev = false
 
 routes = [
+  { pattern = "pinaxis.intisy.dev/login*", zone_name = "intisy.dev" },
+  { pattern = "pinaxis.intisy.dev/api/*", zone_name = "intisy.dev" },
   { pattern = "pinaxis.intisy.dev/private*", zone_name = "intisy.dev" }
 ]
 
 # GITHUB_TOKEN, ACCESS_TEAM_DOMAIN and ACCESS_AUD are worker secrets set by the engine's
-# `pinaxis configure`; until they exist every /private/api request is a 403.
+# `pinaxis configure`; until they exist every request but the /private redirect is a 403.
 
-# Serves dist-private, whose every file lives under private/, so everything it can serve is something
-# Access protects. scripts/assert-private-scoped.mjs proves that against the build, not the config.
+# dist-private holds only api/graph.json, and the worker runs first on every request, so no byte of it
+# is served without the worker's own Access check (worker/site.ts).
 [assets]
 directory = "./dist-private"
-not_found_handling = "single-page-application"
 binding = "ASSETS"
-# The single-page fallback would otherwise answer /private/api with index.html.
-run_worker_first = ["/private/api/*"]
+run_worker_first = true

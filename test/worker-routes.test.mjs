@@ -31,7 +31,7 @@ function request(path, { method = "GET", body, origin = ORIGIN, type = "applicat
     if (origin) headers.set("Origin", origin);
     if (type) headers.set("Content-Type", type);
   }
-  return new Request(`${ORIGIN}/private/api/crawl${path}`,
+  return new Request(`${ORIGIN}/api/crawl${path}`,
     { method, headers, body: method === "POST" ? JSON.stringify(body ?? {}) : undefined });
 }
 
@@ -103,17 +103,18 @@ test("an unknown action is a 404 and a wrong method a 405", async () => {
   assert.equal((await handle(request("/pause"), deps().deps)).status, 405);
 });
 
-test("the worker hands every non-API path to the assets untouched", async () => {
-  const seen = [];
-  const env = { ASSETS: { fetch: async (incoming) => { seen.push(incoming.url); return new Response("asset"); } },
-    GITHUB_TOKEN: "t", ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", ACCESS_AUD: "aud" };
-  const response = await worker.fetch(new Request(`${ORIGIN}/private/index.html`), env);
-  assert.equal(await response.text(), "asset");
-  assert.deepEqual(seen, [`${ORIGIN}/private/index.html`]);
+const env = (assets) => ({ ASSETS: { fetch: assets }, GITHUB_TOKEN: "t",
+  ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", ACCESS_AUD: "aud" });
+
+test("the worker refuses the graph and the crawl without a login, reaching no asset", async () => {
+  const unreachable = env(async () => assert.fail("a signed-out request reached the assets"));
+  for (const path of ["/api/graph", "/api/crawl", "/login"]) {
+    assert.equal((await worker.fetch(new Request(`${ORIGIN}${path}`), unreachable)).status, 403, path);
+  }
 });
 
-test("the worker answers an API path itself and refuses it without a login", async () => {
-  const env = { ASSETS: { fetch: async () => assert.fail("API reached the assets") },
-    GITHUB_TOKEN: "t", ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", ACCESS_AUD: "aud" };
-  assert.equal((await worker.fetch(new Request(`${ORIGIN}/private/api/crawl`), env)).status, 403);
+test("the worker sends an old /private bookmark to /login", async () => {
+  const response = await worker.fetch(new Request(`${ORIGIN}/private/`), env(async () => assert.fail("asset")));
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("Location"), `${ORIGIN}/login`);
 });

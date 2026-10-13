@@ -526,6 +526,7 @@ body {
   padding: 0.35rem 0.95rem;
   border-radius: 999px;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .tab-on {
@@ -969,68 +970,6 @@ body {
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
   font-size: 0.9em;
-}
-
-/* Access gate */
-.gate {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: rgba(10, 10, 9, 0.72);
-  backdrop-filter: blur(3px);
-  z-index: 20;
-}
-
-.gate-card {
-  max-width: 420px;
-  border: 1px solid var(--grid);
-  border-radius: 14px;
-  background: var(--panel);
-  padding: 1.6rem 1.7rem;
-}
-
-.gate-card h2 {
-  margin: 0 0 0.7rem;
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.gate-card p {
-  margin: 0 0 1.3rem;
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: var(--ink-secondary);
-}
-
-.gate-actions {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.gate-primary {
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  background: var(--ink);
-  color: #14140f;
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.gate-secondary {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--grid);
-  border-radius: 8px;
-  background: none;
-  color: var(--ink-secondary);
-  font-family: var(--font-body);
-  font-size: 0.85rem;
-  cursor: pointer;
 }
 
 :focus-visible {
