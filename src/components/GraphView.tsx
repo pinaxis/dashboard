@@ -3,8 +3,8 @@ import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import type Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
-import { buildScene, nodeColor, severityFill, type ColorMode } from "../graph/scene";
-import { BAND_COLOR, TYPE_COLOR, DIM, INK } from "../lib/palette";
+import { buildScene, thresholdForZoom, type ColorMode } from "../graph/scene";
+import { DIM, INK } from "../lib/palette";
 
 const NodeBorder = createNodeBorderProgram({
   borders: [
@@ -56,6 +56,7 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
   const [tip, setTip] = useState<Tip | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("severity");
   const colorModeRef = useRef<ColorMode>(colorMode);
+  const thresholdRef = useRef<number>(0);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -100,15 +101,17 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         if (!nodeVisible(node)) {
           return { ...data, hidden: true };
         }
+        const focus = hoveredRef.current ?? selectedRef.current;
+        const kept = focus && (node === focus || neighborsRef.current.has(node));
+        if (!kept && (data.importance ?? 1) < thresholdRef.current) {
+          return { ...data, hidden: true };
+        }
         const mode = colorModeRef.current;
         const toned = {
           ...data,
-          color: severityFill(data.band, nodeColor({ type: data.nodeType, band: data.band }, mode)),
-          borderColor: mode === "severity"
-            ? (TYPE_COLOR[data.nodeType] ?? INK.muted)
-            : (BAND_COLOR[data.band] ?? INK.muted),
+          color: mode === "severity" ? data.sevColor : data.typeColor,
+          borderColor: mode === "severity" ? data.typeBorder : data.sevBorder,
         };
-        const focus = hoveredRef.current ?? selectedRef.current;
         if (!focus) {
           return toned;
         }
@@ -125,6 +128,13 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         const focus = hoveredRef.current ?? selectedRef.current;
         if (focus && source !== focus && target !== focus) {
           return { ...data, hidden: true };
+        }
+        if (!focus) {
+          const threshold = thresholdRef.current;
+          if ((graph.getNodeAttribute(source, "importance") as number) < threshold
+            || (graph.getNodeAttribute(target, "importance") as number) < threshold) {
+            return { ...data, hidden: true };
+          }
         }
         if (focus) {
           return { ...data, color: LIT_EDGE, size: 1.8 };
@@ -164,10 +174,19 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     sigma.on("clickNode", ({ node }) => onSelect(node));
     sigma.on("clickStage", () => onSelect(null));
 
+    const camera = sigma.getCamera();
+    thresholdRef.current = thresholdForZoom(camera.ratio);
+    camera.on("updated", () => {
+      const next = thresholdForZoom(camera.ratio);
+      if (next !== thresholdRef.current) {
+        thresholdRef.current = next;
+        sigma.refresh({ skipIndexation: true });
+      }
+    });
+
     sigmaRef.current = sigma;
 
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const camera = sigma.getCamera();
       camera.setState({ ratio: 2.4 });
       camera.animatedReset({ duration: 900 });
     }
