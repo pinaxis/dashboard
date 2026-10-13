@@ -124,12 +124,21 @@ export interface CrawlRun {
   stored: number;
 }
 
+export interface TurnRecord {
+  host: "github" | "gcp" | "local";
+  depth: number;
+  at: string;
+  conclusion: string | null;
+  perTarget: Record<string, { searched: number; stored: number }>;
+}
+
 export interface Crawl {
   dataset: string;
   since: string;
   targets: CrawlTargetRow[];
   sources: CrawlSourceRow[];
   runs: CrawlRun[];
+  turns?: TurnRecord[];
 }
 
 export interface GraphDocument {

@@ -20,7 +20,7 @@ function withStored(db, runs) {
   });
 }
 
-export function buildCrawl(db, { dataset, since, runs }) {
+export function buildCrawl(db, { dataset, since, runs, turns }) {
   const pending = countsBy(db, "SELECT target AS key, COUNT(*) AS total FROM pending GROUP BY target");
   const found = countsBy(db, "SELECT target AS key, COUNT(*) AS total FROM node WHERE target <> '' GROUP BY target");
   const targets = [...new Set([...pending.keys(), ...found.keys()])].sort(compareText).map((target) => {
@@ -29,5 +29,6 @@ export function buildCrawl(db, { dataset, since, runs }) {
   });
   const sources = all(db, "SELECT source, COUNT(*) AS total FROM pending GROUP BY source ORDER BY source")
     .map((row) => ({ source: row.source, pending: row.total }));
-  return { dataset, since, targets, sources, runs: withStored(db, runs) };
+  const base = { dataset, since, targets, sources, runs: withStored(db, runs) };
+  return turns && turns.length > 0 ? { ...base, turns } : base;
 }

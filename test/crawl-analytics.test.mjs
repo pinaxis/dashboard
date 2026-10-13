@@ -38,3 +38,30 @@ test("queueBySource shows each source's pending share", () => {
   const rows = queueBySource(crawl);
   assert.deepEqual(rows, [{ source: "github", pending: 6300, share: 100 }]);
 });
+
+import { lifecycleStages, runSpan } from "../src/data/crawlAnalytics.ts";
+
+test("lifecycleStages lists the real phases in order with a GitHub-to-GCP hop", () => {
+  const stages = lifecycleStages();
+  assert.equal(stages[0].key, "start");
+  assert.equal(stages[stages.length - 1].key, "hop");
+  assert.ok(stages.some((s) => s.key === "search" && s.host === "either"));
+  assert.ok(stages.some((s) => s.host === "gcp"));
+  assert.deepEqual(stages.map((s) => s.key), [
+    "start", "lock", "download", "seed", "search", "validate", "store", "enrich", "flush", "offload", "hop",
+  ]);
+});
+
+test("runSpan reports first, last, and turn count, and tolerates zero runs", () => {
+  assert.deepEqual(runSpan({ dataset: "d", since: "s", targets: [], sources: [], runs: [] }), { first: null, last: null, turns: 0 });
+  const span = runSpan({
+    dataset: "d", since: "s", targets: [], sources: [],
+    runs: [
+      { at: "2026-10-13T05:00:00Z", workflow: "scan", conclusion: "success", url: "u1", stored: 1 },
+      { at: "2026-10-13T03:00:00Z", workflow: "resume", conclusion: "success", url: "u2", stored: 1 },
+    ],
+  });
+  assert.equal(span.turns, 2);
+  assert.equal(span.first, "2026-10-13T03:00:00Z");
+  assert.equal(span.last, "2026-10-13T05:00:00Z");
+});

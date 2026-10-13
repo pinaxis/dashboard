@@ -7,6 +7,7 @@ import type { LiveState } from "../data/crawlStatus";
 import type { TargetInfo } from "../data/catalog";
 import { loadPriorities, savePriorities, priorityRows, validatePriorityInput } from "../data/priorities";
 import { throughput, queueBySource } from "../data/crawlAnalytics";
+import { CrawlPipeline } from "./CrawlPipeline";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
 
@@ -282,6 +283,8 @@ export function CrawlProgress(
         )}
       </div>
 
+      <CrawlPipeline crawl={crawl} />
+
       <Controls crawl={crawl} state={state} refresh={refresh} />
 
       <div className="tiles">
@@ -309,30 +312,21 @@ export function CrawlProgress(
           </ul>
         </Panel>
 
-        <Panel title="Crawl runs" wide>
-          <table className="ptable">
-            <thead>
-              <tr><th>when</th><th>kind</th><th>outcome</th><th>first found</th><th>run</th></tr>
-            </thead>
-            <tbody>
-              {crawl.runs.map((run) => (
-                <tr key={run.url}>
-                  <td>{relativeTime(run.at)}</td>
-                  <td>{run.workflow}</td>
-                  <td style={{ color: run.conclusion === "success" ? STATUS.good : run.conclusion ? STATUS.serious : SERIES[0] }}>
-                    {run.conclusion ?? "running"}
-                  </td>
-                  <td>
-                    <span className="run-bar"><span style={{ width: `${(run.stored / mostStored) * 100}%`, background: SERIES[0] }} /></span>
-                    {compactNumber(run.stored)}
-                  </td>
-                  <td><a href={run.url} target="_blank" rel="noopener noreferrer">open</a></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <Panel title="Run timeline" wide>
+          <ol className="timeline">
+            {crawl.runs.map((run) => (
+              <li key={run.url} className="timeline-run">
+                <span className="timeline-when">{relativeTime(run.at)}</span>
+                <span className={`run-badge run-${run.workflow}`}>{run.workflow}</span>
+                <span className="run-bar timeline-bar"><span style={{ width: `${(run.stored / mostStored) * 100}%`, background: SERIES[0] }} /></span>
+                <span className="timeline-found">{compactNumber(run.stored)}</span>
+                <span className="run-outcome" style={{ color: run.conclusion === "success" ? STATUS.good : run.conclusion ? STATUS.serious : SERIES[0] }}>{run.conclusion ?? "running"}</span>
+                <a href={run.url} target="_blank" rel="noopener noreferrer">view run</a>
+              </li>
+            ))}
+          </ol>
           <p className="progress-detail">
-            First found counts the nodes first seen between a run's start and the next run's start. An
+            Found per run counts the nodes first seen between a run's start and the next run's start. An
             approximation: a long run can find nodes after a later run has started.
           </p>
         </Panel>
