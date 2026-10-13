@@ -14,11 +14,35 @@ const ALWAYS_LABEL = 24;
 // larger than a low node at full reach.
 const BAND_SIZE: Record<string, number> = { CRITICAL: 26, HIGH: 20, MEDIUM: 9, LOW: 2.5 };
 const BAND_TIER: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+const BAND_WEIGHT: Record<string, number> = { CRITICAL: 1, HIGH: 0.85, MEDIUM: 0.5, LOW: 0.15 };
 const REACH_BONUS = 6;
 
 export function nodeSize(band: string, reach: number): number {
   const bounded = Math.max(0, Math.min(1, reach));
   return (BAND_SIZE[band] ?? BAND_SIZE.LOW) + bounded * REACH_BONUS;
+}
+
+// How much a node earns a place at the overview: the stronger of how severe it is and how connected
+// it is, so the dangerous nodes and the big hubs survive a zoom-out while the peripheral mass drops.
+export function importance(band: string, reach: number): number {
+  const bounded = Math.max(0, Math.min(1, reach));
+  return Math.max(BAND_WEIGHT[band] ?? BAND_WEIGHT.LOW, bounded);
+}
+
+// The importance a node needs to be drawn at the current zoom. Wide out shows only the exposures and
+// hubs; each step in reveals more, until a deep zoom draws everything. Quantized so it changes only
+// when the camera crosses a step, never every frame.
+export function thresholdForZoom(ratio: number): number {
+  if (ratio >= 2) {
+    return 0.6;
+  }
+  if (ratio >= 0.8) {
+    return 0.45;
+  }
+  if (ratio >= 0.3) {
+    return 0.16;
+  }
+  return 0;
 }
 
 function channels(hex: string): [number, number, number] {
@@ -51,8 +75,8 @@ function rank(graph: Graph): void {
   graph.forEachNode((node, attributes) => {
     const band = attributes.band as string;
     const reach = Math.sqrt(graph.degree(node) / widestReach);
-    const size = nodeSize(band, reach);
-    graph.setNodeAttribute(node, "size", size);
+    graph.setNodeAttribute(node, "size", nodeSize(band, reach));
+    graph.setNodeAttribute(node, "importance", importance(band, reach));
     graph.setNodeAttribute(node, "zIndex", (BAND_TIER[band] ?? 1) * 1000 + Math.round(reach * 100));
     if (band === "HIGH" || band === "CRITICAL") {
       graph.setNodeAttribute(node, "forceLabel", true);
@@ -70,14 +94,21 @@ export function buildScene(document: GraphDocument): Graph {
   const stored = hasStoredLayout(document);
 
   document.nodes.forEach((node, index) => {
+    const bandColor = BAND_COLOR[node.band] ?? INK.muted;
+    const typeColor = TYPE_COLOR[node.type] ?? INK.muted;
+    const sevColor = severityFill(node.band, bandColor);
     graph.mergeNodeAttributes(String(index), {
       label: nodeName(node),
       nodeType: node.type,
       band: node.band,
       verify: node.type === "SECRET" ? (node.validated ? (node.valid ? "live" : "dead") : "format") : null,
       severity: node.severity,
-      color: severityFill(node.band, BAND_COLOR[node.band] ?? INK.muted),
-      borderColor: TYPE_COLOR[node.type] ?? INK.muted,
+      color: sevColor,
+      borderColor: typeColor,
+      sevColor,
+      sevBorder: bandColor,
+      typeColor: severityFill(node.band, typeColor),
+      typeBorder: typeColor,
       size: MIN_SIZE,
       ...(stored ? { x: node.x, y: node.y } : {}),
     });
