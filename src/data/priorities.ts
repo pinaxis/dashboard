@@ -34,6 +34,11 @@ export async function savePriorities(weights: Record<string, number>, fetcher: t
   }
 }
 
+export function validatePriorityInput(raw: string): number | null {
+  const value = Number(raw);
+  return raw.trim() !== "" && Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
+}
+
 export function priorityRows(catalog: TargetInfo[], overrides: Record<string, number>): PriorityRow[] {
   return catalog
     .map((entry) => ({
