@@ -1209,3 +1209,15 @@ button.hbar-label {
 .detail-chips { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .detail-chips li a { font-size: var(--text-xs); color: var(--ink-secondary); background: var(--panel); border: 1px solid var(--grid); border-radius: 999px; padding: 2px 8px; text-decoration: none; }
 .detail-chips li a:hover { color: var(--ink); }
+
+.run-bar {
+  display: inline-block;
+  width: 70px;
+  height: 7px;
+  background: var(--grid-soft);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+.run-bar span { display: block; height: 100%; }
