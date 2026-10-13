@@ -3,7 +3,7 @@ import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import type Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
-import { buildScene, nodeColor, type ColorMode } from "../graph/scene";
+import { buildScene, nodeColor, severityFill, type ColorMode } from "../graph/scene";
 import { BAND_COLOR, TYPE_COLOR, DIM, INK } from "../lib/palette";
 
 const NodeBorder = createNodeBorderProgram({
@@ -103,7 +103,7 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         const mode = colorModeRef.current;
         const toned = {
           ...data,
-          color: nodeColor({ type: data.nodeType, band: data.band }, mode),
+          color: severityFill(data.band, nodeColor({ type: data.nodeType, band: data.band }, mode)),
           borderColor: mode === "severity"
             ? (TYPE_COLOR[data.nodeType] ?? INK.muted)
             : (BAND_COLOR[data.band] ?? INK.muted),
