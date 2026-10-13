@@ -1131,3 +1131,16 @@ button.hbar-label {
 .psave {
   margin-top: var(--space-3);
 }
+
+.graph-colormode {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  gap: var(--space-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 2px;
+  z-index: 5;
+}

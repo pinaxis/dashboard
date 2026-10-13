@@ -61,6 +61,14 @@ export function buildScene(document: GraphDocument): Graph {
   return graph;
 }
 
+export type ColorMode = "severity" | "type";
+
+export function nodeColor(node: { type: string; band: string }, mode: ColorMode): string {
+  return mode === "severity"
+    ? (BAND_COLOR[node.band] ?? TYPE_COLOR[node.type] ?? INK.muted)
+    : (TYPE_COLOR[node.type] ?? BAND_COLOR[node.band] ?? INK.muted);
+}
+
 export function categoryColor(kind: string): string {
   return CATEGORY_COLOR[kind] ?? INK.muted;
 }
