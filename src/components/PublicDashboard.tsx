@@ -6,10 +6,19 @@ import { buildCategoryScene } from "../graph/scene";
 import { SERIES, STATUS } from "../lib/palette";
 import { compactNumber } from "../lib/format";
 import { describePublic } from "../data/publicView";
+import { Empty } from "./Empty";
 
 
 function Bars({ title, items, color }: { title: string; items: { label: string; count: number }[]; color: string }) {
   const widest = Math.max(1, ...items.map((item) => item.count));
+  if (items.length === 0) {
+    return (
+      <section className="panel">
+        <h2>{title}</h2>
+        <Empty>Nothing in the public set yet; findings appear 30 days after they are first seen.</Empty>
+      </section>
+    );
+  }
   return (
     <section className="panel">
       <h2>{title}</h2>
@@ -69,7 +78,7 @@ export function PublicDashboard({ document }: { document: PublicDocument }) {
           items={stats.monthly.map((entry) => ({ label: entry.month, count: entry.found }))} color={SERIES[3]} />
         <section className="panel panel-wide">
           <h2>How categories connect</h2>
-          <CategoryGraph document={document} />
+          {document.nodes.length === 0 ? <Empty>No categories to connect yet.</Empty> : <CategoryGraph document={document} />}
         </section>
       </div>
     </div>
