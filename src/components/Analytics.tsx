@@ -1,14 +1,9 @@
-import type { GraphDocument, PackageNode } from "../data/graph";
+import type { GraphDocument } from "../data/graph";
 import { nodeName } from "../data/graph";
 import { leaksPerRepository } from "../data/exposure";
-import { BAND_ORDER, BAND_COLOR, TYPE_COLOR, STATUS, SERIES, INK } from "../lib/palette";
+import { topPackages, coOccurrenceBars, type Bar } from "../data/analytics";
+import { BAND_ORDER, BAND_COLOR, STATUS, SERIES, INK } from "../lib/palette";
 import { compactNumber } from "../lib/format";
-
-interface Bar {
-  label: string;
-  value: number;
-  color: string;
-}
 
 function HBars({ items, format }: { items: Bar[]; format?: (value: number) => string }) {
   const widest = Math.max(1, ...items.map((item) => item.value));
@@ -85,14 +80,6 @@ function topExposedRepositories(document: GraphDocument): Bar[] {
     .map((entry) => ({ label: nodeName(entry.node), value: entry.count, color: BAND_COLOR[entry.node.band] }));
 }
 
-function topPackages(document: GraphDocument): Bar[] {
-  return document.nodes
-    .filter((node): node is PackageNode => node.type === "PACKAGE" && node.popularity != null)
-    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-    .slice(0, 10)
-    .map((node) => ({ label: node.label, value: node.popularity ?? 0, color: TYPE_COLOR.PACKAGE }));
-}
-
 function Tile({ value, label, accent }: { value: string; label: string; accent?: string }) {
   return (
     <div className="tile">
@@ -118,9 +105,7 @@ export function Analytics({ document }: { document: GraphDocument }) {
     value: document.stats.bands[band] ?? 0,
     color: BAND_COLOR[band],
   }));
-  const cooccurrence: Bar[] = document.stats.coOccurrence
-    .slice(0, 8)
-    .map((pair) => ({ label: `${pair.a} + ${pair.b}`, value: pair.repositories, color: SERIES[6] }));
+  const cooccurrence = coOccurrenceBars(document);
 
   return (
     <div className="analytics">
