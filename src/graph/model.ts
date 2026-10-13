@@ -29,6 +29,7 @@ export interface GraphModel {
   x: number[];
   y: number[];
   importance: number[];
+  onDemand: boolean[];
   style: NodeStyle[];
   neighbors: Edge[][];
 }
@@ -65,6 +66,7 @@ export function buildModel(document: GraphDocument): GraphModel {
   const x = new Array<number>(count);
   const y = new Array<number>(count);
   const importanceOf = new Array<number>(count);
+  const onDemand = new Array<boolean>(count);
   const style = new Array<NodeStyle>(count);
 
   document.nodes.forEach((node, index) => {
@@ -73,6 +75,7 @@ export function buildModel(document: GraphDocument): GraphModel {
     x[index] = position.x;
     y[index] = position.y;
     importanceOf[index] = importance(node.band, reach);
+    onDemand[index] = node.type === "MAINTAINER";
     const bandColor = BAND_COLOR[node.band] ?? INK.muted;
     const typeColor = TYPE_COLOR[node.type] ?? INK.muted;
     style[index] = {
@@ -91,5 +94,5 @@ export function buildModel(document: GraphDocument): GraphModel {
     };
   });
 
-  return { count, x, y, importance: importanceOf, style, neighbors };
+  return { count, x, y, importance: importanceOf, onDemand, style, neighbors };
 }

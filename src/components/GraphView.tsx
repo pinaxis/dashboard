@@ -17,9 +17,12 @@ const NodeBorder = createNodeBorderProgram({
 
 const EDGE_COLOR = "#2b2a27";
 const LIT_EDGE = "#6f6e66";
+// The maintainer social graph is 84% of all edges; drawing its mesh is what makes a zoomed-in region
+// lag. Only the exposure edges are drawn ambiently; a node's social links appear when it is selected.
+const SOCIAL_EDGE = new Set(["FOLLOWS", "CO_MAINTAINS", "MAINTAINS"]);
 // The renderer never holds more than this many nodes; the window follows the viewport, so the rest of
 // the dataset is reached by navigating to it rather than loaded all at once.
-const WINDOW_CAP = 4000;
+const WINDOW_CAP = 2500;
 // The handful of nodes (high-severity exposures and the biggest hubs) that are always loaded, so they
 // stay on the overview and reappear wherever you pan.
 const ALWAYS_LOADED = 0.6;
@@ -77,6 +80,22 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     const graph = new Graph();
     const present = new Set<number>();
 
+    // Two hidden nodes at the dataset's corners pin Sigma's bounding box, which otherwise shifts as
+    // the window's nodes change; without them, changing the window moves the viewport, which changes
+    // the window, in a feedback loop.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < model.count; i += 1) {
+      minX = Math.min(minX, model.x[i]);
+      minY = Math.min(minY, model.y[i]);
+      maxX = Math.max(maxX, model.x[i]);
+      maxY = Math.max(maxY, model.y[i]);
+    }
+    graph.addNode("corner-min", { x: minX, y: minY, size: 0, color: "#00000000", label: "", hidden: true });
+    graph.addNode("corner-max", { x: maxX, y: maxY, size: 0, color: "#00000000", label: "", hidden: true });
+
     const addNode = (index: number): void => {
       if (present.has(index)) {
         return;
@@ -102,9 +121,9 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       });
       present.add(index);
     };
-    const addEdgesFor = (index: number): void => {
+    const addEdgesFor = (index: number, includeSocial: boolean): void => {
       for (const { j, edgeType } of model.neighbors[index]) {
-        if (!present.has(j)) {
+        if (!present.has(j) || (!includeSocial && SOCIAL_EDGE.has(edgeType))) {
           continue;
         }
         const a = String(Math.min(index, j));
@@ -206,19 +225,30 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       }
       return pinned;
     };
+    let lastSelected: string | null = null;
     const retarget = (): void => {
       const want = computeWindow(model, viewportBounds(), ALWAYS_LOADED, WINDOW_CAP, pinnedSet());
+      let changed = selectedRef.current !== lastSelected;
+      lastSelected = selectedRef.current;
       for (const index of present) {
         if (!want.has(index)) {
           graph.dropNode(String(index));
           present.delete(index);
+          changed = true;
         }
       }
       for (const index of want) {
-        addNode(index);
+        if (!present.has(index)) {
+          addNode(index);
+          changed = true;
+        }
       }
+      if (!changed) {
+        return;
+      }
+      const selectedIndex = selectedRef.current !== null ? Number(selectedRef.current) : null;
       for (const index of want) {
-        addEdgesFor(index);
+        addEdgesFor(index, index === selectedIndex);
       }
       refocusRef.current(false);
     };
