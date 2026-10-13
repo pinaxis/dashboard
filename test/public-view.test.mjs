@@ -28,3 +28,12 @@ test("a suppressed zero reads as fewer than five, not absent", () => {
   const byLabel = new Map(describePublic(stats).tiles.map((tile) => [tile.label, tile.value]));
   assert.equal(byLabel.get("owners affected"), "fewer than 5");
 });
+
+test("an empty public set reads none across every tile, not zero beside fewer than five", () => {
+  const empty = { ...stats, total: 0, validity: { live: 0, dead: 0, formatOnly: 0 }, repositories: 0, owners: 0 };
+  const byLabel = new Map(describePublic(empty).tiles.map((tile) => [tile.label, tile.value]));
+  assert.equal(byLabel.get("findings"), "none");
+  assert.equal(byLabel.get("confirmed live"), "none");
+  assert.equal(byLabel.get("repositories affected"), "none");
+  assert.equal(byLabel.get("owners affected"), "none");
+});

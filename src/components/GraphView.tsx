@@ -3,8 +3,8 @@ import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import type Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
-import { buildScene } from "../graph/scene";
-import { DIM, INK } from "../lib/palette";
+import { buildScene, nodeColor, type ColorMode } from "../graph/scene";
+import { BAND_COLOR, TYPE_COLOR, DIM, INK } from "../lib/palette";
 
 const NodeBorder = createNodeBorderProgram({
   borders: [
@@ -54,6 +54,8 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
   const hoveredRef = useRef<string | null>(null);
   const neighborsRef = useRef<Set<string>>(new Set());
   const [tip, setTip] = useState<Tip | null>(null);
+  const [colorMode, setColorMode] = useState<ColorMode>("severity");
+  const colorModeRef = useRef<ColorMode>(colorMode);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -98,14 +100,22 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         if (!nodeVisible(node)) {
           return { ...data, hidden: true };
         }
+        const mode = colorModeRef.current;
+        const toned = {
+          ...data,
+          color: nodeColor({ type: data.nodeType, band: data.band }, mode),
+          borderColor: mode === "severity"
+            ? (TYPE_COLOR[data.nodeType] ?? INK.muted)
+            : (BAND_COLOR[data.band] ?? INK.muted),
+        };
         const focus = hoveredRef.current ?? selectedRef.current;
         if (!focus) {
-          return data;
+          return toned;
         }
         if (node === focus || neighborsRef.current.has(node)) {
-          return { ...data, forceLabel: true };
+          return { ...toned, forceLabel: true };
         }
-        return { ...data, color: DIM, borderColor: DIM, label: "" };
+        return { ...toned, color: DIM, borderColor: DIM, label: "" };
       },
       edgeReducer: (edge, data) => {
         const [source, target] = graph.extremities(edge);
@@ -176,6 +186,11 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     refocusRef.current(false);
   }, [activeBands, activeTypes, activeVerify, selected]);
 
+  useEffect(() => {
+    colorModeRef.current = colorMode;
+    refocusRef.current(true);
+  }, [colorMode]);
+
   const camera = () => sigmaRef.current?.getCamera();
 
   return (
@@ -185,6 +200,10 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         <button type="button" aria-label="Zoom in" onClick={() => camera()?.animatedZoom({ duration: 250 })}>+</button>
         <button type="button" aria-label="Zoom out" onClick={() => camera()?.animatedUnzoom({ duration: 250 })}>−</button>
         <button type="button" aria-label="Fit graph" onClick={() => camera()?.animatedReset({ duration: 350 })}>Fit</button>
+      </div>
+      <div className="graph-colormode" role="group" aria-label="Colour by">
+        <button type="button" className={`tab ${colorMode === "severity" ? "tab-on" : ""}`} aria-pressed={colorMode === "severity"} onClick={() => setColorMode("severity")}>Severity</button>
+        <button type="button" className={`tab ${colorMode === "type" ? "tab-on" : ""}`} aria-pressed={colorMode === "type"} onClick={() => setColorMode("type")}>Type</button>
       </div>
       {tip && (
         <div className="graph-tip" style={{ left: tip.x, top: tip.y }}>

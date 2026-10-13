@@ -7,6 +7,10 @@ import { CrawlProgress } from "./components/CrawlProgress";
 import { Search } from "./components/Search";
 import { PublicDashboard } from "./components/PublicDashboard";
 import { loadGraph, isPublicDocument, type GraphDocument, type PublicDocument } from "./data/graph";
+import { loadCatalog, catalogByName, type TargetInfo } from "./data/catalog";
+import { keyTypeView } from "./data/keyType";
+import { KeyTypeDetail } from "./components/KeyTypeDetail";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BAND_ORDER, BAND_COLOR, TYPE_ORDER, TYPE_COLOR, STATUS, INK } from "./lib/palette";
 import { relativeTime } from "./lib/format";
 import { probeSession, LOGIN_URL, LOGOUT_URL } from "./data/session";
@@ -45,6 +49,8 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("graph");
   const [mode, setMode] = useState<Mode>("public");
+  const [catalog, setCatalog] = useState<TargetInfo[]>([]);
+  const [detailType, setDetailType] = useState<string | null>(null);
 
   useEffect(() => {
     loadGraph(PUBLIC_URL)
@@ -59,12 +65,16 @@ export default function App() {
       if (document) {
         setPrivateData(document);
         setMode("private");
+        void loadCatalog().then(setCatalog);
       }
     });
   }, []);
 
+  const openType = useCallback((name: string) => setDetailType(name), []);
+
   const logOut = useCallback(() => {
     setSelected(null);
+    setDetailType(null);
     setPrivateData(null);
     setMode("public");
     setView("graph");
@@ -94,6 +104,10 @@ export default function App() {
       setView("graph");
     }
   }, [mode, view]);
+
+  useEffect(() => {
+    setDetailType(null);
+  }, [view]);
 
   const data = privateData;
 
@@ -186,34 +200,39 @@ export default function App() {
   return (
     <div className="app">
       {header}
-      {view === "graph" && (
-        <div className="toolbar">
-          <Chips label="Severity" items={filters.severity} active={bands} onToggle={toggleIn(setBands)} />
-          <Chips label="Types" items={filters.nodeTypes} active={types} onToggle={toggleIn(setTypes)} />
-          <Chips label="Status" items={filters.status} active={verify} onToggle={toggleIn(setVerify)} />
-        </div>
-      )}
-      {view === "graph" && (
-        <main className="stage">
-          <GraphView document={data} activeBands={bands} activeTypes={types} activeVerify={verify} selected={selected} onSelect={setSelected} />
-          <InsightRail document={data} selected={selected} onClear={clear} onSelect={setSelected} />
-        </main>
-      )}
-      {view === "charts" && (
-        <main className="stage stage-scroll">
-          <Analytics document={data} />
-        </main>
-      )}
-      {view === "search" && (
-        <main className="stage stage-scroll">
-          <Search document={data} onOpen={openNode} />
-        </main>
-      )}
-      {view === "crawl" && (
-        <main className="stage stage-scroll">
-          <CrawlProgress document={data} />
-        </main>
-      )}
+      <ErrorBoundary key={view}>
+        {view === "graph" && (
+          <div className="toolbar">
+            <Chips label="Severity" items={filters.severity} active={bands} onToggle={toggleIn(setBands)} />
+            <Chips label="Types" items={filters.nodeTypes} active={types} onToggle={toggleIn(setTypes)} />
+            <Chips label="Status" items={filters.status} active={verify} onToggle={toggleIn(setVerify)} />
+          </div>
+        )}
+        {view === "graph" && (
+          <main className="stage">
+            <GraphView document={data} activeBands={bands} activeTypes={types} activeVerify={verify} selected={selected} onSelect={setSelected} />
+            <InsightRail document={data} selected={selected} onClear={clear} onSelect={setSelected} />
+          </main>
+        )}
+        {view === "charts" && (
+          <main className="stage stage-scroll">
+            <Analytics document={data} onOpenType={openType} />
+          </main>
+        )}
+        {view === "search" && (
+          <main className="stage stage-scroll">
+            <Search document={data} onOpen={openNode} />
+          </main>
+        )}
+        {view === "crawl" && (
+          <main className="stage stage-scroll">
+            <CrawlProgress document={data} catalog={catalog} onOpenType={openType} />
+          </main>
+        )}
+        {detailType && (
+          <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} onClose={() => setDetailType(null)} />
+        )}
+      </ErrorBoundary>
       <footer className="footer">
         <span>{data.nodes.length} nodes, {data.edges.length} relationships</span>
         <span>{mode === "private" ? "private view" : "public view"}</span>

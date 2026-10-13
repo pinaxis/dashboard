@@ -8,8 +8,21 @@
   --ink-secondary: #c3c2b7;
   --ink-muted: #8a897f;
   --critical: #d03b3b;
+  --serious: #ec835a;
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --radius: 12px;
   color-scheme: dark;
 }
 
@@ -398,8 +411,10 @@ body {
 
 .empty {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   color: var(--ink-muted);
+  padding: var(--space-5) 0;
+  text-align: center;
 }
 
 .back {
@@ -517,6 +532,11 @@ body {
   background: var(--surface-raised);
 }
 
+/* Public mode has no tab buttons; without this the empty pill shows as a stray dot. */
+.tabs:empty {
+  display: none;
+}
+
 .tab {
   border: none;
   background: none;
@@ -549,7 +569,7 @@ body {
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1px;
   background: var(--grid);
   border: 1px solid var(--grid);
@@ -866,6 +886,7 @@ body {
 /* Crawl controls */
 .crawl-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.7rem 1rem;
@@ -874,6 +895,9 @@ body {
   margin-bottom: 1.2rem;
   font-size: 0.9rem;
   color: var(--ink);
+}
+.controls-actions {
+  flex-wrap: wrap;
 }
 
 .crawl-dot {
@@ -998,4 +1022,141 @@ body {
     transition: none !important;
     animation: none !important;
   }
+}
+
+.detail-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 92vw);
+  height: 100vh;
+  background: var(--surface-raised);
+  border-left: 1px solid var(--grid);
+  padding: var(--space-5);
+  overflow-y: auto;
+  z-index: 20;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--grid-soft);
+}
+.detail-key {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.detail-val {
+  text-align: right;
+  font-size: var(--text-sm);
+}
+.detail-rules {
+  margin-top: var(--space-4);
+}
+.detail-rules ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.detail-rules li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-xs);
+}
+.detail-rules code {
+  color: var(--ink);
+  font-family: ui-monospace, monospace;
+}
+.detail-regex {
+  color: var(--ink-secondary);
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+.detail-len {
+  color: var(--ink-muted);
+}
+
+.ptable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.ptable th {
+  text-align: left;
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+.ptable td {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--grid-soft);
+}
+.ptable input {
+  width: 56px;
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.ptable input[aria-invalid="true"] {
+  border-color: var(--serious);
+}
+.target-link {
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+.target-link:hover {
+  text-decoration: underline;
+}
+button.hbar-label {
+  min-width: 0;
+}
+.psave {
+  margin-top: var(--space-3);
+}
+
+.graph-colormode {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  gap: var(--space-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 2px;
+  z-index: 5;
+}
+
+.ptable .th-sort {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0;
 }
