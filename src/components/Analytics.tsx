@@ -1,7 +1,7 @@
 import type { GraphDocument } from "../data/graph";
 import { nodeName } from "../data/graph";
 import { leaksPerRepository } from "../data/exposure";
-import { topPackages, coOccurrenceBars, type Bar } from "../data/analytics";
+import { topPackages, coOccurrenceBars, packagesByEcosystem, hasNamedPackages, type Bar } from "../data/analytics";
 import { BAND_ORDER, BAND_COLOR, STATUS, SERIES, INK } from "../lib/palette";
 import { compactNumber } from "../lib/format";
 
@@ -133,8 +133,8 @@ export function Analytics({ document, onOpenType }: { document: GraphDocument; o
         <Panel title="Most exposed repositories">
           <HBars items={topExposedRepositories(document)} />
         </Panel>
-        <Panel title="Most used packages">
-          <HBars items={topPackages(document)} format={compactNumber} />
+        <Panel title={hasNamedPackages(document) ? "Most used packages" : "Most depended-on ecosystems"}>
+          <HBars items={hasNamedPackages(document) ? topPackages(document) : packagesByEcosystem(document)} format={compactNumber} />
         </Panel>
       </div>
     </div>

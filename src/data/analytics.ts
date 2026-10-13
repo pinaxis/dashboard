@@ -24,3 +24,22 @@ export function coOccurrenceBars(document: GraphDocument): Bar[] {
     .slice(0, 8)
     .map((pair) => ({ label: `${pair.a} + ${pair.b}`, value: pair.repositories, color: SERIES[6] }));
 }
+
+// True once a build carries real package names; older exports left them null, so the chart falls back
+// to summing popularity per ecosystem instead of repeating the target name.
+export function hasNamedPackages(document: GraphDocument): boolean {
+  return document.nodes.some((node) =>
+    node.type === "PACKAGE" && typeof node.label === "string" && node.label.trim() !== "" && node.label !== node.target);
+}
+
+export function packagesByEcosystem(document: GraphDocument): Bar[] {
+  const totals = new Map<string, number>();
+  for (const node of document.nodes) {
+    if (node.type === "PACKAGE" && node.popularity != null) {
+      totals.set(node.target, (totals.get(node.target) ?? 0) + node.popularity);
+    }
+  }
+  return [...totals.entries()]
+    .map(([target, value]) => ({ label: target, value, color: TYPE_COLOR.PACKAGE }))
+    .sort((a, b) => b.value - a.value);
+}

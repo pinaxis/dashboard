@@ -44,7 +44,9 @@ function emitNode(row, { maintainerCounts }) {
       : named;
   }
   if (row.type === "PACKAGE") {
-    return { ...base, target: row.target, label: row.label, popularity: row.popularity };
+    // A package's name lives in its key (npm/pypi coordinate), not label; emit it so the dashboard
+    // can show the package rather than falling back to the target name.
+    return { ...base, target: row.target, label: row.label ?? row.key, popularity: row.popularity };
   }
   return { ...base, label: row.label };
 }

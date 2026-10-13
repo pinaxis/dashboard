@@ -1193,3 +1193,19 @@ button.hbar-label {
 @media (prefers-reduced-motion: reduce) {
   .loading-dots span { animation: none; opacity: 0.8; }
 }
+
+.detail-section { margin-top: var(--space-4); }
+.detail-bands { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.detail-bands li { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+.detail-band-name { color: var(--ink-secondary); }
+.detail-band-track { height: 8px; background: var(--grid-soft); border-radius: 4px; overflow: hidden; }
+.detail-band-track span { display: block; height: 100%; }
+.detail-band-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.detail-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-1); }
+.detail-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.detail-list a { color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-list a:hover { text-decoration: underline; }
+.detail-list .detail-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.detail-chips { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.detail-chips li a { font-size: var(--text-xs); color: var(--ink-secondary); background: var(--panel); border: 1px solid var(--grid); border-radius: 999px; padding: 2px 8px; text-decoration: none; }
+.detail-chips li a:hover { color: var(--ink); }
