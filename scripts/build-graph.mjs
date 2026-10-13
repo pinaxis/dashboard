@@ -45,6 +45,13 @@ function crawlRuns(since) {
       .map((entry) => ({ at: entry.createdAt, workflow, conclusion: entry.conclusion || null, url: entry.url })));
 }
 
+// Per-turn host/depth/stage records come from the scan workflow's step outputs, which the engine only
+// began emitting in a later release. Until a crawl runs with that engine, there are no turns to map,
+// so this returns [] and buildCrawl omits the field; the dashboard then renders architecture-only.
+function crawlTurns() {
+  return [];
+}
+
 const { tag, schemaVersion } = dataset();
 let dir = null;
 try {
@@ -65,7 +72,7 @@ try {
   if (MODE === "private") {
     graph = buildGraph(db, { schemaVersion });
     const { createdAt: since } = gh(["release", "view", tag, "--repo", REPO, "--json", "createdAt"]);
-    graph.crawl = buildCrawl(db, { dataset: tag, since, runs: crawlRuns(since) });
+    graph.crawl = buildCrawl(db, { dataset: tag, since, runs: crawlRuns(since), turns: crawlTurns() });
   } else {
     graph = buildPublicGraph(db, defaultPolicy());
     graph.schema = schemaVersion;
