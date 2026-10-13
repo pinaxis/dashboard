@@ -32,7 +32,7 @@ const CREDENTIAL_ROLES = [
   { key: "formatOnly", label: "format only", color: SERIES[0] },
 ] as const;
 
-function Credentials({ document }: { document: GraphDocument }) {
+function Credentials({ document, onOpenType }: { document: GraphDocument; onOpenType?: (name: string) => void }) {
   const rows = [...document.stats.credentials]
     .map((row) => ({ ...row, total: row.validatedLive + row.validatedDead + row.formatOnly }))
     .sort((a, b) => b.total - a.total);
@@ -42,7 +42,11 @@ function Credentials({ document }: { document: GraphDocument }) {
       <ul className="hbars">
         {rows.map((row) => (
           <li key={row.target}>
-            <span className="hbar-label" title={row.target}>{row.target}</span>
+            {onOpenType ? (
+              <button type="button" className="hbar-label target-link" title={row.target} onClick={() => onOpenType(row.target)}>{row.target}</button>
+            ) : (
+              <span className="hbar-label" title={row.target}>{row.target}</span>
+            )}
             <span className="hbar-track">
               {CREDENTIAL_ROLES.map((role) =>
                 row[role.key] > 0 ? (
@@ -98,7 +102,7 @@ function Panel({ title, wide, children }: { title: string; wide?: boolean; child
   );
 }
 
-export function Analytics({ document }: { document: GraphDocument }) {
+export function Analytics({ document, onOpenType }: { document: GraphDocument; onOpenType?: (name: string) => void }) {
   const live = document.stats.credentials.reduce((sum, row) => sum + row.validatedLive, 0);
   const bands: Bar[] = BAND_ORDER.map((band) => ({
     label: band.toLowerCase(),
@@ -118,7 +122,7 @@ export function Analytics({ document }: { document: GraphDocument }) {
       </div>
       <div className="charts">
         <Panel title="Credentials by type" wide>
-          <Credentials document={document} />
+          <Credentials document={document} onOpenType={onOpenType} />
         </Panel>
         <Panel title="Severity distribution">
           <HBars items={bands} />

@@ -7,6 +7,9 @@ import { CrawlProgress } from "./components/CrawlProgress";
 import { Search } from "./components/Search";
 import { PublicDashboard } from "./components/PublicDashboard";
 import { loadGraph, isPublicDocument, type GraphDocument, type PublicDocument } from "./data/graph";
+import { loadCatalog, catalogByName, type TargetInfo } from "./data/catalog";
+import { keyTypeView } from "./data/keyType";
+import { KeyTypeDetail } from "./components/KeyTypeDetail";
 import { BAND_ORDER, BAND_COLOR, TYPE_ORDER, TYPE_COLOR, STATUS, INK } from "./lib/palette";
 import { relativeTime } from "./lib/format";
 import { probeSession, LOGIN_URL, LOGOUT_URL } from "./data/session";
@@ -45,6 +48,8 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("graph");
   const [mode, setMode] = useState<Mode>("public");
+  const [catalog, setCatalog] = useState<TargetInfo[]>([]);
+  const [detailType, setDetailType] = useState<string | null>(null);
 
   useEffect(() => {
     loadGraph(PUBLIC_URL)
@@ -59,9 +64,12 @@ export default function App() {
       if (document) {
         setPrivateData(document);
         setMode("private");
+        void loadCatalog().then(setCatalog);
       }
     });
   }, []);
+
+  const openType = useCallback((name: string) => setDetailType(name), []);
 
   const logOut = useCallback(() => {
     setSelected(null);
@@ -201,7 +209,7 @@ export default function App() {
       )}
       {view === "charts" && (
         <main className="stage stage-scroll">
-          <Analytics document={data} />
+          <Analytics document={data} onOpenType={openType} />
         </main>
       )}
       {view === "search" && (
@@ -220,6 +228,9 @@ export default function App() {
         <span>{data.dataset ?? "current dataset"}</span>
         <span>updated {relativeTime(data.stats.lastSeen)}</span>
       </footer>
+      {detailType && (
+        <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} onClose={() => setDetailType(null)} />
+      )}
     </div>
   );
 }
