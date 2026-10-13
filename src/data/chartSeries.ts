@@ -108,11 +108,27 @@ function passesValidity(node: GraphNode, validity: Set<"live" | "dead" | "format
 }
 
 export function applyFilter(document: GraphDocument, filter: ChartFilter): GraphDocument {
-  const nodes = document.nodes.filter(
-    (node) =>
-      (filter.bands.size === 0 || filter.bands.has(node.band)) &&
-      (filter.types.size === 0 || filter.types.has(node.type)) &&
-      passesValidity(node, filter.validity),
-  );
-  return { ...document, nodes };
+  const keep = (node: GraphNode): boolean =>
+    (filter.bands.size === 0 || filter.bands.has(node.band)) &&
+    (filter.types.size === 0 || filter.types.has(node.type)) &&
+    passesValidity(node, filter.validity);
+  if (filter.bands.size === 0 && filter.types.size === 0 && filter.validity.size === 0) {
+    return document;
+  }
+  // Edges address nodes by index, so narrowing nodes alone leaves every index misaligned. Remap the
+  // survivors and drop any edge whose endpoints did not both survive.
+  const remap = new Map<number, number>();
+  const nodes: GraphNode[] = [];
+  document.nodes.forEach((node, index) => {
+    if (keep(node)) {
+      remap.set(index, nodes.length);
+      nodes.push(node);
+    }
+  });
+  const edges = document.edges.flatMap((edge) => {
+    const source = remap.get(edge.s);
+    const target = remap.get(edge.t);
+    return source === undefined || target === undefined ? [] : [{ ...edge, s: source, t: target }];
+  });
+  return { ...document, nodes, edges };
 }

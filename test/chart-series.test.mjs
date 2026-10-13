@@ -60,6 +60,30 @@ test("applyFilter with every dimension empty returns all nodes", () => {
   assert.equal(out.nodes.length, 2);
 });
 
+test("applyFilter drops edges whose endpoints are filtered out and remaps the survivors", () => {
+  const repo = { type: "REPOSITORY", severity: 1, band: "LOW", firstSeen: "2026-10-01T00:00:00Z", lastSeen: "2026-10-01T00:00:00Z", label: "o/r", maintainers: 0 };
+  const nodes = [secret({}), file({ path: "a/b.env" }), repo];
+  const edges = [
+    { s: 0, t: 1, type: "LEAKED_IN", weight: 1, severity: 1 },
+    { s: 2, t: 1, type: "CONTAINS", weight: 1, severity: 1 },
+  ];
+  const source = { ...doc(nodes), edges };
+  const view = applyFilter(source, { bands: new Set(), types: new Set(["FILE", "REPOSITORY"]), validity: new Set() });
+  assert.equal(view.nodes.length, 2);
+  assert.equal(view.edges.length, 1);
+  const edge = view.edges[0];
+  assert.equal(view.nodes[edge.s].type, "REPOSITORY");
+  assert.equal(view.nodes[edge.t].type, "FILE");
+});
+
+test("applyFilter with no filter leaves edge indices identical to the source", () => {
+  const repo = { type: "REPOSITORY", severity: 1, band: "LOW", firstSeen: "2026-10-01T00:00:00Z", lastSeen: "2026-10-01T00:00:00Z", label: "o/r", maintainers: 0 };
+  const nodes = [secret({}), repo];
+  const edges = [{ s: 0, t: 1, type: "LEAKED_IN", weight: 1, severity: 1 }];
+  const view = applyFilter({ ...doc(nodes), edges }, { bands: new Set(), types: new Set(), validity: new Set() });
+  assert.deepEqual(view.edges, edges);
+});
+
 test("applyFilter narrows by band, type, and validity; non-secret passes the validity dimension", () => {
   const nodes = [
     secret({ band: "CRITICAL", valid: true, validated: true }),
