@@ -564,7 +564,7 @@ body {
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1px;
   background: var(--grid);
   border: 1px solid var(--grid);
@@ -881,6 +881,7 @@ body {
 /* Crawl controls */
 .crawl-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   padding: 0.7rem 1rem;
@@ -889,6 +890,9 @@ body {
   margin-bottom: 1.2rem;
   font-size: 0.9rem;
   color: var(--ink);
+}
+.controls-actions {
+  flex-wrap: wrap;
 }
 
 .crawl-dot {
