@@ -2,6 +2,7 @@ export interface WindowModel {
   importance: number[];
   x: number[];
   y: number[];
+  onDemand: boolean[];
 }
 
 export interface Bounds {
@@ -27,7 +28,13 @@ export function computeWindow(
 
   const candidates: number[] = [];
   for (let index = 0; index < model.importance.length; index += 1) {
-    if (pinned.has(index) || model.importance[index] >= threshold || inBounds(index)) {
+    if (pinned.has(index)) {
+      candidates.push(index);
+      continue;
+    }
+    // On-demand nodes (the maintainer social layer) never fill the viewport on their own; they load
+    // only when something is selected, so a dense social cluster cannot flood the window.
+    if (!model.onDemand[index] && (model.importance[index] >= threshold || inBounds(index))) {
       candidates.push(index);
     }
   }

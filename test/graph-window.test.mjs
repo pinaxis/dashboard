@@ -7,6 +7,7 @@ const model = {
   importance: [0.9, 0.15, 0.15, 0.15, 0.5],
   x: [100, 1, 100, 100, 100],
   y: [100, 1, 100, 100, 100],
+  onDemand: [false, false, false, false, false],
 };
 const bounds = { minX: 0, maxX: 10, minY: 0, maxY: 10 };
 
@@ -24,4 +25,18 @@ test("the window never exceeds the cap, keeping pinned then the most important",
   assert.equal(win.size, 2);
   assert.ok(win.has(2), "pinned survives the cap");
   assert.ok(win.has(0), "the most important of the rest survives the cap");
+});
+
+test("an on-demand node never fills the window on its own, only when pinned", () => {
+  const social = {
+    importance: [0.15, 0.15],
+    x: [1, 1],
+    y: [1, 1],
+    onDemand: [true, true],
+  };
+  const bounds = { minX: 0, maxX: 10, minY: 0, maxY: 10 };
+  const without = computeWindow(social, bounds, 0, 100, new Set());
+  assert.equal(without.size, 0, "on-demand nodes stay out even when inside the viewport");
+  const withPin = computeWindow(social, bounds, 0, 100, new Set([1]));
+  assert.ok(withPin.has(1) && !withPin.has(0), "a pinned on-demand node loads, its peers do not");
 });
