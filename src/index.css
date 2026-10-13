@@ -1226,14 +1226,31 @@ button.hbar-label {
 .panel-switch { display: flex; gap: 6px; margin-bottom: 8px; }
 .recharts-surface { overflow: visible; }
 
-.pipeline-flow { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 10px 0; }
-.pipeline-stage { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--grid, #33322f); border-radius: 6px; font-size: 12px; position: relative; }
-.pipeline-stage:not(:last-child)::after { content: "\2192"; margin-left: 4px; color: var(--ink-muted, #8a897f); }
-.pipeline-dot { width: 8px; height: 8px; border-radius: 50%; }
-.pipeline-hosts, .pipeline-counts { display: flex; gap: 16px; font-size: 12px; color: var(--ink-secondary, #c3c2b7); margin-top: 8px; }
-.pipeline-hosts .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
-.timeline { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.timeline-run { display: grid; grid-template-columns: 90px 70px 1fr 50px 70px 70px; align-items: center; gap: 10px; }
-.run-badge { font-size: 11px; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--grid, #33322f); text-align: center; }
+.pipeline-head h2 { margin-bottom: 2px; }
+.pipeline-sub { margin: 0 0 4px; font-size: 12px; color: var(--ink-muted, #8a897f); }
+.pipeline-track { list-style: none; display: flex; gap: 0; padding: 14px 0 4px; margin: 0; overflow-x: auto; }
+.pipeline-step { flex: 1 0 auto; min-width: 74px; display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; text-align: center; }
+.pipeline-step:not(:last-child)::after { content: ""; position: absolute; top: 16px; left: 50%; width: 100%; height: 2px; background: var(--grid, #33322f); z-index: 0; }
+.pipeline-node { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--ink-secondary, #c3c2b7); background: #161615; border: 2px solid var(--grid, #33322f); }
+.pipeline-cap { font-size: 11px; color: var(--ink-muted, #8a897f); white-space: nowrap; }
+.step-gcp .pipeline-node { border-color: #3987e5; color: #cfe2fb; background: #10213a; }
+.step-gcp .pipeline-cap { color: #9ec3f0; }
+.pipeline-handoff { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.host-badge { font-size: 12px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--grid, #33322f); }
+.host-github { color: #d8d7cd; border-color: #5b5a54; }
+.host-gcp { color: #cfe2fb; border-color: #2f5c93; }
+.handoff-swap { color: var(--ink-secondary, #c3c2b7); font-size: 18px; }
+.handoff-note { font-size: 12px; color: var(--ink-muted, #8a897f); }
+.pipeline-stats { display: flex; gap: 32px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--grid, #33322f); }
+.pstat { display: flex; flex-direction: column; gap: 2px; }
+.pstat-value { font-size: 22px; font-weight: 600; color: var(--ink-primary, #ffffff); line-height: 1; }
+.pstat-label { font-size: 11px; color: var(--ink-muted, #8a897f); text-transform: uppercase; letter-spacing: 0.04em; }
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline-run { display: grid; grid-template-columns: 96px 72px minmax(120px, 1fr) 60px 80px auto; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--grid, #33322f); }
+.timeline-run:last-child { border-bottom: none; }
+.timeline-when { font-size: 12px; color: var(--ink-secondary, #c3c2b7); }
+.run-badge { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; padding: 3px 0; border-radius: 5px; border: 1px solid var(--grid, #33322f); text-align: center; }
 .run-scan { color: #3987e5; } .run-resume { color: #199e70; }
-.timeline-bar { height: 8px; } .timeline-bar > span { display: block; height: 100%; border-radius: 4px; }
+.timeline-bar { height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; } .timeline-bar > span { display: block; height: 100%; border-radius: 4px; }
+.timeline-found { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-primary, #ffffff); }
+.run-outcome { font-size: 12px; }
