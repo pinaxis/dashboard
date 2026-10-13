@@ -8,12 +8,23 @@ import { resolve } from "node:path";
  * scratch/, which no build copies, so a private document can never ship in the public deploy.
  */
 function localPrivateData(): Plugin {
-  const file = resolve(__dirname, "scratch/graph.private.json");
+  const files: Record<string, string> = {
+    "/api/graph": resolve(__dirname, "scratch/graph.private.json"),
+    "/api/catalog": resolve(__dirname, "scratch/catalog.json"),
+  };
+  const crawlStub = JSON.stringify({ lock: { held: false }, paused: false, current: null, last: null });
   const serve = (server: ViteDevServer | PreviewServer) => {
     server.middlewares.use((request, response, next) => {
-      if (request.url && request.url.split("?")[0] === "/api/graph" && existsSync(file)) {
+      const path = request.url ? request.url.split("?")[0] : "";
+      const file = files[path];
+      if (file && existsSync(file)) {
         response.setHeader("Content-Type", "application/json");
         response.end(readFileSync(file));
+        return;
+      }
+      if (path === "/api/crawl") {
+        response.setHeader("Content-Type", "application/json");
+        response.end(crawlStub);
         return;
       }
       next();

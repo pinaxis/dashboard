@@ -1,14 +1,9 @@
-import type { GraphDocument, PackageNode } from "../data/graph";
+import type { GraphDocument } from "../data/graph";
 import { nodeName } from "../data/graph";
 import { leaksPerRepository } from "../data/exposure";
-import { BAND_ORDER, BAND_COLOR, TYPE_COLOR, STATUS, SERIES, INK } from "../lib/palette";
+import { topPackages, coOccurrenceBars, type Bar } from "../data/analytics";
+import { BAND_ORDER, BAND_COLOR, STATUS, SERIES, INK } from "../lib/palette";
 import { compactNumber } from "../lib/format";
-
-interface Bar {
-  label: string;
-  value: number;
-  color: string;
-}
 
 function HBars({ items, format }: { items: Bar[]; format?: (value: number) => string }) {
   const widest = Math.max(1, ...items.map((item) => item.value));
@@ -37,7 +32,7 @@ const CREDENTIAL_ROLES = [
   { key: "formatOnly", label: "format only", color: SERIES[0] },
 ] as const;
 
-function Credentials({ document }: { document: GraphDocument }) {
+function Credentials({ document, onOpenType }: { document: GraphDocument; onOpenType?: (name: string) => void }) {
   const rows = [...document.stats.credentials]
     .map((row) => ({ ...row, total: row.validatedLive + row.validatedDead + row.formatOnly }))
     .sort((a, b) => b.total - a.total);
@@ -47,7 +42,11 @@ function Credentials({ document }: { document: GraphDocument }) {
       <ul className="hbars">
         {rows.map((row) => (
           <li key={row.target}>
-            <span className="hbar-label" title={row.target}>{row.target}</span>
+            {onOpenType ? (
+              <button type="button" className="hbar-label target-link" title={row.target} onClick={() => onOpenType(row.target)}>{row.target}</button>
+            ) : (
+              <span className="hbar-label" title={row.target}>{row.target}</span>
+            )}
             <span className="hbar-track">
               {CREDENTIAL_ROLES.map((role) =>
                 row[role.key] > 0 ? (
@@ -85,14 +84,6 @@ function topExposedRepositories(document: GraphDocument): Bar[] {
     .map((entry) => ({ label: nodeName(entry.node), value: entry.count, color: BAND_COLOR[entry.node.band] }));
 }
 
-function topPackages(document: GraphDocument): Bar[] {
-  return document.nodes
-    .filter((node): node is PackageNode => node.type === "PACKAGE" && node.popularity != null)
-    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-    .slice(0, 10)
-    .map((node) => ({ label: node.label, value: node.popularity ?? 0, color: TYPE_COLOR.PACKAGE }));
-}
-
 function Tile({ value, label, accent }: { value: string; label: string; accent?: string }) {
   return (
     <div className="tile">
@@ -111,16 +102,14 @@ function Panel({ title, wide, children }: { title: string; wide?: boolean; child
   );
 }
 
-export function Analytics({ document }: { document: GraphDocument }) {
+export function Analytics({ document, onOpenType }: { document: GraphDocument; onOpenType?: (name: string) => void }) {
   const live = document.stats.credentials.reduce((sum, row) => sum + row.validatedLive, 0);
   const bands: Bar[] = BAND_ORDER.map((band) => ({
     label: band.toLowerCase(),
     value: document.stats.bands[band] ?? 0,
     color: BAND_COLOR[band],
   }));
-  const cooccurrence: Bar[] = document.stats.coOccurrence
-    .slice(0, 8)
-    .map((pair) => ({ label: `${pair.a} + ${pair.b}`, value: pair.repositories, color: SERIES[6] }));
+  const cooccurrence = coOccurrenceBars(document);
 
   return (
     <div className="analytics">
@@ -133,7 +122,7 @@ export function Analytics({ document }: { document: GraphDocument }) {
       </div>
       <div className="charts">
         <Panel title="Credentials by type" wide>
-          <Credentials document={document} />
+          <Credentials document={document} onOpenType={onOpenType} />
         </Panel>
         <Panel title="Severity distribution">
           <HBars items={bands} />

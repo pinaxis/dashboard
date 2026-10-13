@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Crawl, GraphDocument } from "../data/graph";
 import { crawlApi } from "../data/crawlApi";
 import type { StartInputs } from "../data/crawlApi";
-import { canStart, describeStatus, isActive } from "../data/crawlStatus";
+import { canStart, describeStatus, isActive, isCrawlStatus } from "../data/crawlStatus";
 import type { LiveState } from "../data/crawlStatus";
+import type { TargetInfo } from "../data/catalog";
+import { loadPriorities, savePriorities, priorityRows, validatePriorityInput } from "../data/priorities";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
 
@@ -34,7 +36,10 @@ function useLiveStatus(): [LiveState, () => Promise<void>] {
   const [state, setState] = useState<LiveState>({ kind: "loading" });
   const refresh = useCallback(async () => {
     try {
-      setState({ kind: "ready", status: await crawlApi.status() });
+      const status = await crawlApi.status();
+      setState(isCrawlStatus(status)
+        ? { kind: "ready", status }
+        : { kind: "unknown", error: "the crawl status response was not in the expected shape" });
     } catch (failure) {
       setState({ kind: "unknown", error: errorText(failure) });
     }
@@ -127,7 +132,114 @@ function Controls({ crawl, state, refresh }: { crawl: Crawl; state: LiveState; r
   );
 }
 
-export function CrawlProgress({ document }: { document: GraphDocument }) {
+type SortKey = "priority" | "found";
+
+function PriorityTable(
+  { crawl, catalog, onOpenType }: { crawl: Crawl; catalog: TargetInfo[]; onOpenType?: (name: string) => void },
+) {
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [sortKey, setSortKey] = useState<SortKey>("priority");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadPriorities().then(setOverrides);
+  }, []);
+
+  const found = useMemo(() => new Map(crawl.targets.map((row) => [row.target, row])), [crawl.targets]);
+
+  const rows = useMemo(() => {
+    const base = priorityRows(catalog, overrides).map((row) => ({ ...row, crawl: found.get(row.name) }));
+    if (sortKey === "found") {
+      return [...base].sort((a, b) => (b.crawl?.discovered ?? 0) - (a.crawl?.discovered ?? 0));
+    }
+    return base;
+  }, [catalog, overrides, found, sortKey]);
+
+  const effective = (name: string, weight: number): number => validatePriorityInput(edits[name] ?? "") ?? weight;
+  const invalid = Object.entries(edits).some(([, raw]) => validatePriorityInput(raw) === null);
+  const dirty = rows.some((row) => {
+    const parsed = validatePriorityInput(edits[row.name] ?? "");
+    return parsed !== null && parsed !== row.weight;
+  });
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    const weights: Record<string, number> = {};
+    for (const entry of catalog) {
+      const value = effective(entry.name, overrides[entry.name] ?? entry.weight);
+      if (value !== entry.weight) {
+        weights[entry.name] = value;
+      }
+    }
+    try {
+      await savePriorities(weights);
+      setOverrides(await loadPriorities());
+      setEdits({});
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel panel-wide">
+      <h2>Targets and priority</h2>
+      {catalog.length === 0 ? (
+        <p className="empty">The catalog is not available; priority cannot be shown.</p>
+      ) : (
+        <>
+          <table className="ptable">
+            <thead>
+              <tr>
+                <th>target</th>
+                <th><button type="button" className="th-sort" onClick={() => setSortKey("priority")}>priority {sortKey === "priority" ? "▾" : ""}</button></th>
+                <th><button type="button" className="th-sort" onClick={() => setSortKey("found")}>found {sortKey === "found" ? "▾" : ""}</button></th>
+                <th>queued</th>
+                <th>status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const raw = edits[row.name] ?? String(row.weight);
+                const bad = validatePriorityInput(raw) === null;
+                return (
+                  <tr key={row.name}>
+                    <td>
+                      <button type="button" className="target-link" onClick={() => onOpenType?.(row.name)}>{row.name}</button>
+                    </td>
+                    <td>
+                      <input
+                        type="number" min={1} max={100} value={raw}
+                        aria-invalid={bad}
+                        onChange={(event) => setEdits((prev) => ({ ...prev, [row.name]: event.target.value }))}
+                      />
+                    </td>
+                    <td>{compactNumber(row.crawl?.discovered ?? 0)}</td>
+                    <td>{compactNumber(row.crawl?.pending ?? 0)}</td>
+                    <td>{row.crawl?.complete ? <strong style={{ color: STATUS.good }}>done</strong> : "queued"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="psave">
+            <button type="button" className="control-start" disabled={busy || invalid || !dirty} onClick={() => void save()}>Save priority</button>
+            {error && <span className="progress-detail" style={{ color: STATUS.serious }}> {error}</span>}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+export function CrawlProgress(
+  { document, catalog, onOpenType }:
+    { document: GraphDocument; catalog: TargetInfo[]; onOpenType?: (name: string) => void },
+) {
   const crawl = document.crawl;
   const [state, refresh] = useLiveStatus();
 
@@ -162,19 +274,7 @@ export function CrawlProgress({ document }: { document: GraphDocument }) {
         <Tile value={lastRun ? relativeTime(lastRun.at) : "none"} label={lastRun ? `last run, ${lastRun.conclusion ?? "running"}` : "last run"} />
       </div>
       <div className="charts">
-        <Panel title="By target" wide>
-          <ul className="hbars">
-            {crawl.targets.map((row) => (
-              <li key={row.target}>
-                <span className="hbar-label">{row.target}</span>
-                <span className="hbar-value">
-                  {compactNumber(row.discovered)} found · {compactNumber(row.pending)} queued
-                  {row.complete && <strong style={{ color: STATUS.good }}> · done</strong>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+        <PriorityTable crawl={crawl} catalog={catalog} onOpenType={onOpenType} />
 
         <Panel title="By source">
           <ul className="hbars">
