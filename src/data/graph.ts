@@ -200,3 +200,20 @@ export async function loadGraph(url: string, options?: RequestInit): Promise<Gra
   }
   return (await response.json()) as GraphDocument | PublicDocument;
 }
+
+// A confirmed-live secret is the most severe finding there is (a working leaked credential), so it is
+// shown as critical even if the stored band was lower. Mutates node bands in place and returns the
+// document with its band tallies corrected to match, so the chips and charts stay consistent.
+export function promoteLiveSecrets(document: GraphDocument): GraphDocument {
+  const bands: Record<string, number> = { ...document.stats.bands };
+  let moved = 0;
+  for (const node of document.nodes) {
+    if (node.type === "SECRET" && node.validated && node.valid && node.band !== "CRITICAL") {
+      bands[node.band] = (bands[node.band] ?? 0) - 1;
+      node.band = "CRITICAL";
+      bands.CRITICAL = (bands.CRITICAL ?? 0) + 1;
+      moved += 1;
+    }
+  }
+  return moved === 0 ? document : { ...document, stats: { ...document.stats, bands } };
+}
