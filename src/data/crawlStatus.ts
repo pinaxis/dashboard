@@ -7,6 +7,15 @@ export type LiveState =
 
 export type StatusTone = "running" | "paused" | "idle" | "unknown";
 
+/** @remarks guards the crawl tab against a status that is missing its shape, which once blanked the whole app. */
+export function isCrawlStatus(value: unknown): value is CrawlStatus {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as { lock?: unknown; paused?: unknown };
+  return typeof candidate.lock === "object" && candidate.lock !== null && typeof candidate.paused === "boolean";
+}
+
 /** @remarks a lock held by a hop on another host has no run here; starting then would lift the pause. */
 export function canStart(status: CrawlStatus): boolean {
   return status.current === null && !status.lock.held;
@@ -22,6 +31,9 @@ export function describeStatus(state: LiveState, relative: (iso: string) => stri
   }
   if (state.kind === "unknown") {
     return { tone: "unknown", text: `Crawl status unknown: ${state.error}` };
+  }
+  if (!isCrawlStatus(state.status)) {
+    return { tone: "unknown", text: "Crawl status unavailable" };
   }
   const { current, lock, paused } = state.status;
   if (current) {

@@ -532,6 +532,11 @@ body {
   background: var(--surface-raised);
 }
 
+/* Public mode has no tab buttons; without this the empty pill shows as a stray dot. */
+.tabs:empty {
+  display: none;
+}
+
 .tab {
   border: none;
   background: none;

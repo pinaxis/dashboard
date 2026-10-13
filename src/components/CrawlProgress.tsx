@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Crawl, GraphDocument } from "../data/graph";
 import { crawlApi } from "../data/crawlApi";
 import type { StartInputs } from "../data/crawlApi";
-import { canStart, describeStatus, isActive } from "../data/crawlStatus";
+import { canStart, describeStatus, isActive, isCrawlStatus } from "../data/crawlStatus";
 import type { LiveState } from "../data/crawlStatus";
 import { loadCatalog, catalogByName } from "../data/catalog";
 import type { TargetInfo } from "../data/catalog";
@@ -39,7 +39,10 @@ function useLiveStatus(): [LiveState, () => Promise<void>] {
   const [state, setState] = useState<LiveState>({ kind: "loading" });
   const refresh = useCallback(async () => {
     try {
-      setState({ kind: "ready", status: await crawlApi.status() });
+      const status = await crawlApi.status();
+      setState(isCrawlStatus(status)
+        ? { kind: "ready", status }
+        : { kind: "unknown", error: "the crawl status response was not in the expected shape" });
     } catch (failure) {
       setState({ kind: "unknown", error: errorText(failure) });
     }

@@ -12,6 +12,7 @@ function localPrivateData(): Plugin {
     "/api/graph": resolve(__dirname, "scratch/graph.private.json"),
     "/api/catalog": resolve(__dirname, "scratch/catalog.json"),
   };
+  const crawlStub = JSON.stringify({ lock: { held: false }, paused: false, current: null, last: null });
   const serve = (server: ViteDevServer | PreviewServer) => {
     server.middlewares.use((request, response, next) => {
       const path = request.url ? request.url.split("?")[0] : "";
@@ -19,6 +20,11 @@ function localPrivateData(): Plugin {
       if (file && existsSync(file)) {
         response.setHeader("Content-Type", "application/json");
         response.end(readFileSync(file));
+        return;
+      }
+      if (path === "/api/crawl") {
+        response.setHeader("Content-Type", "application/json");
+        response.end(crawlStub);
         return;
       }
       next();
