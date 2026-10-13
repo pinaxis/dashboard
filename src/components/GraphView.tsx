@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
-import type Graph from "graphology";
+import Graph from "graphology";
 import type { GraphDocument } from "../data/graph";
-import { buildScene, thresholdForZoom, type ColorMode } from "../graph/scene";
+import { buildModel } from "../graph/model";
+import { computeWindow } from "../graph/window";
+import type { ColorMode } from "../graph/scene";
 import { DIM, INK } from "../lib/palette";
 
 const NodeBorder = createNodeBorderProgram({
@@ -13,7 +15,16 @@ const NodeBorder = createNodeBorderProgram({
   ],
 });
 
+const EDGE_COLOR = "#2b2a27";
 const LIT_EDGE = "#6f6e66";
+// The renderer never holds more than this many nodes; the window follows the viewport, so the rest of
+// the dataset is reached by navigating to it rather than loaded all at once.
+const WINDOW_CAP = 4000;
+// The handful of nodes (high-severity exposures and the biggest hubs) that are always loaded, so they
+// stay on the overview and reappear wherever you pan.
+const ALWAYS_LOADED = 0.6;
+const RETARGET_MS = 120;
+
 const RELATION: Record<string, string> = {
   LEAKED_IN: "leaked in",
   USED_IN: "used in",
@@ -45,7 +56,8 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const refocusRef = useRef<(skipIndexation: boolean) => void>(() => {});
-  const graph = useMemo(() => buildScene(document), [document]);
+  const retargetRef = useRef<() => void>(() => {});
+  const model = useMemo(() => buildModel(document), [document]);
 
   const bandsRef = useRef(activeBands);
   const typesRef = useRef(activeTypes);
@@ -53,16 +65,57 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
   const selectedRef = useRef<string | null>(selected);
   const hoveredRef = useRef<string | null>(null);
   const neighborsRef = useRef<Set<string>>(new Set());
-  const [tip, setTip] = useState<Tip | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("severity");
   const colorModeRef = useRef<ColorMode>(colorMode);
-  const thresholdRef = useRef<number>(0);
+  const [tip, setTip] = useState<Tip | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) {
       return;
     }
-    const nodeVisible = (node: string) => {
+    const container = containerRef.current;
+    const graph = new Graph();
+    const present = new Set<number>();
+
+    const addNode = (index: number): void => {
+      if (present.has(index)) {
+        return;
+      }
+      const style = model.style[index];
+      graph.addNode(String(index), {
+        x: model.x[index],
+        y: model.y[index],
+        size: style.size,
+        label: style.label,
+        nodeType: style.nodeType,
+        band: style.band,
+        verify: style.verify,
+        severity: style.severity,
+        color: style.sevColor,
+        borderColor: style.typeBorder,
+        sevColor: style.sevColor,
+        sevBorder: style.sevBorder,
+        typeColor: style.typeColor,
+        typeBorder: style.typeBorder,
+        forceLabel: style.forceLabel,
+        zIndex: style.zIndex,
+      });
+      present.add(index);
+    };
+    const addEdgesFor = (index: number): void => {
+      for (const { j, edgeType } of model.neighbors[index]) {
+        if (!present.has(j)) {
+          continue;
+        }
+        const a = String(Math.min(index, j));
+        const b = String(Math.max(index, j));
+        if (!graph.hasEdge(a, b)) {
+          graph.addEdgeWithKey(`${a}-${b}`, a, b, { edgeType, size: 0.9, color: EDGE_COLOR });
+        }
+      }
+    };
+
+    const nodeVisible = (node: string): boolean => {
       const attributes = graph.getNodeAttributes(node);
       if (!bandsRef.current.has(attributes.band as string)) {
         return false;
@@ -82,7 +135,7 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     };
 
-    const sigma = new Sigma(graph as Graph, containerRef.current, {
+    const sigma = new Sigma(graph, container, {
       defaultNodeType: "bordered",
       nodeProgramClasses: { bordered: NodeBorder },
       renderEdgeLabels: false,
@@ -95,15 +148,10 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       labelSize: 12,
       labelRenderedSizeThreshold: 8,
       zIndex: true,
-      minCameraRatio: 0.05,
+      minCameraRatio: 0.02,
       maxCameraRatio: 24,
       nodeReducer: (node, data) => {
         if (!nodeVisible(node)) {
-          return { ...data, hidden: true };
-        }
-        const focus = hoveredRef.current ?? selectedRef.current;
-        const kept = focus && (node === focus || neighborsRef.current.has(node));
-        if (!kept && (data.importance ?? 1) < thresholdRef.current) {
           return { ...data, hidden: true };
         }
         const mode = colorModeRef.current;
@@ -112,6 +160,7 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
           color: mode === "severity" ? data.sevColor : data.typeColor,
           borderColor: mode === "severity" ? data.typeBorder : data.sevBorder,
         };
+        const focus = hoveredRef.current ?? selectedRef.current;
         if (!focus) {
           return toned;
         }
@@ -129,13 +178,6 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
         if (focus && source !== focus && target !== focus) {
           return { ...data, hidden: true };
         }
-        if (!focus) {
-          const threshold = thresholdRef.current;
-          if ((graph.getNodeAttribute(source, "importance") as number) < threshold
-            || (graph.getNodeAttribute(target, "importance") as number) < threshold) {
-            return { ...data, hidden: true };
-          }
-        }
         if (focus) {
           return { ...data, color: LIT_EDGE, size: 1.8 };
         }
@@ -143,9 +185,48 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
       },
     });
 
+    const viewportBounds = () => {
+      const topLeft = sigma.viewportToGraph({ x: 0, y: 0 });
+      const bottomRight = sigma.viewportToGraph({ x: container.clientWidth, y: container.clientHeight });
+      return {
+        minX: Math.min(topLeft.x, bottomRight.x),
+        maxX: Math.max(topLeft.x, bottomRight.x),
+        minY: Math.min(topLeft.y, bottomRight.y),
+        maxY: Math.max(topLeft.y, bottomRight.y),
+      };
+    };
+    const pinnedSet = (): Set<number> => {
+      const pinned = new Set<number>();
+      if (selectedRef.current !== null) {
+        const index = Number(selectedRef.current);
+        pinned.add(index);
+        for (const { j } of model.neighbors[index]) {
+          pinned.add(j);
+        }
+      }
+      return pinned;
+    };
+    const retarget = (): void => {
+      const want = computeWindow(model, viewportBounds(), ALWAYS_LOADED, WINDOW_CAP, pinnedSet());
+      for (const index of present) {
+        if (!want.has(index)) {
+          graph.dropNode(String(index));
+          present.delete(index);
+        }
+      }
+      for (const index of want) {
+        addNode(index);
+      }
+      for (const index of want) {
+        addEdgesFor(index);
+      }
+      refocusRef.current(false);
+    };
+    retargetRef.current = retarget;
+
     refocusRef.current = (skipIndexation) => {
       const focus = hoveredRef.current ?? selectedRef.current;
-      neighborsRef.current = focus ? new Set(graph.neighbors(focus)) : new Set();
+      neighborsRef.current = focus && graph.hasNode(focus) ? new Set(graph.neighbors(focus)) : new Set();
       sigma.refresh(skipIndexation ? { skipIndexation: true } : undefined);
     };
 
@@ -175,34 +256,30 @@ export function GraphView({ document, activeBands, activeTypes, activeVerify, se
     sigma.on("clickStage", () => onSelect(null));
 
     const camera = sigma.getCamera();
-    thresholdRef.current = thresholdForZoom(camera.ratio);
+    let retargetTimer: number | undefined;
     camera.on("updated", () => {
-      const next = thresholdForZoom(camera.ratio);
-      if (next !== thresholdRef.current) {
-        thresholdRef.current = next;
-        sigma.refresh({ skipIndexation: true });
-      }
+      window.clearTimeout(retargetTimer);
+      retargetTimer = window.setTimeout(retarget, RETARGET_MS);
     });
 
     sigmaRef.current = sigma;
 
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      camera.setState({ ratio: 2.4 });
-      camera.animatedReset({ duration: 900 });
-    }
+    retarget();
+    camera.animatedReset({ duration: 600 });
 
     return () => {
+      window.clearTimeout(retargetTimer);
       sigma.kill();
       sigmaRef.current = null;
     };
-  }, [graph, onSelect]);
+  }, [model, onSelect]);
 
   useEffect(() => {
     bandsRef.current = activeBands;
     typesRef.current = activeTypes;
     verifyRef.current = activeVerify;
     selectedRef.current = selected;
-    refocusRef.current(false);
+    retargetRef.current();
   }, [activeBands, activeTypes, activeVerify, selected]);
 
   useEffect(() => {
