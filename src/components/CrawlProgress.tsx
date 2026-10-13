@@ -6,6 +6,7 @@ import { canStart, describeStatus, isActive, isCrawlStatus } from "../data/crawl
 import type { LiveState } from "../data/crawlStatus";
 import type { TargetInfo } from "../data/catalog";
 import { loadPriorities, savePriorities, priorityRows, validatePriorityInput } from "../data/priorities";
+import { throughput, queueBySource } from "../data/crawlAnalytics";
 import { compactNumber, relativeTime } from "../lib/format";
 import { STATUS, SERIES } from "../lib/palette";
 
@@ -30,6 +31,14 @@ function Panel({ title, wide, children }: { title: string; wide?: boolean; child
 }
 
 const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
+
+function percentFound(row: { discovered: number; pending: number } | undefined): number {
+  if (!row) {
+    return 0;
+  }
+  const total = row.discovered + row.pending;
+  return total === 0 ? 0 : Math.round((row.discovered / total) * 100);
+}
 const errorText = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
 function useLiveStatus(): [LiveState, () => Promise<void>] {
@@ -199,6 +208,7 @@ function PriorityTable(
                 <th><button type="button" className="th-sort" onClick={() => setSortKey("priority")}>priority {sortKey === "priority" ? "▾" : ""}</button></th>
                 <th><button type="button" className="th-sort" onClick={() => setSortKey("found")}>found {sortKey === "found" ? "▾" : ""}</button></th>
                 <th>queued</th>
+                <th>progress</th>
                 <th>status</th>
               </tr>
             </thead>
@@ -220,7 +230,12 @@ function PriorityTable(
                     </td>
                     <td>{compactNumber(row.crawl?.discovered ?? 0)}</td>
                     <td>{compactNumber(row.crawl?.pending ?? 0)}</td>
-                    <td>{row.crawl?.complete ? <strong style={{ color: STATUS.good }}>done</strong> : "queued"}</td>
+                    <td>
+                      <span className="run-bar" title={`${percentFound(row.crawl)}% found`}>
+                        <span style={{ width: `${percentFound(row.crawl)}%`, background: STATUS.good }} />
+                      </span>
+                    </td>
+                    <td>{row.crawl?.complete ? <strong style={{ color: STATUS.good }}>done</strong> : (row.crawl?.pending ?? 0) > 0 ? "queued" : "idle"}</td>
                   </tr>
                 );
               })}
@@ -254,6 +269,8 @@ export function CrawlProgress(
   const line = describeStatus(state, relativeTime);
   const lastRun = crawl.runs[0];
   const mostStored = Math.max(1, ...crawl.runs.map((run) => run.stored));
+  const flow = throughput(crawl);
+  const sources = queueBySource(crawl);
 
   return (
     <div className="analytics">
@@ -268,42 +285,55 @@ export function CrawlProgress(
       <Controls crawl={crawl} state={state} refresh={refresh} />
 
       <div className="tiles">
-        <Tile value={compactNumber(sum(crawl.targets.map((row) => row.pending)))} label="queued queries" accent={SERIES[3]} />
+        <Tile value={compactNumber(flow.pending)} label="queued queries" accent={SERIES[3]} />
         <Tile value={compactNumber(sum(crawl.targets.map((row) => row.discovered)))} label="items found" />
+        <Tile value={compactNumber(flow.avgPerRun)} label="found per run" />
+        <Tile value={flow.etaRuns == null ? "caught up" : `~${flow.etaRuns}`} label={flow.etaRuns == null ? "backlog" : "runs to drain"} />
         <Tile value={String(crawl.runs.length)} label={`runs on ${crawl.dataset}`} />
         <Tile value={lastRun ? relativeTime(lastRun.at) : "none"} label={lastRun ? `last run, ${lastRun.conclusion ?? "running"}` : "last run"} />
       </div>
       <div className="charts">
         <PriorityTable crawl={crawl} catalog={catalog} onOpenType={onOpenType} />
 
-        <Panel title="By source">
+        <Panel title="Queue by source">
           <ul className="hbars">
-            {crawl.sources.map((row) => (
+            {sources.map((row) => (
               <li key={row.source}>
-                <span className="hbar-label">{row.source}</span>
-                <span className="hbar-value">{compactNumber(row.pending)} queued</span>
+                <span className="hbar-label" title={row.source}>{row.source}</span>
+                <span className="hbar-track">
+                  <span className="hbar-fill" style={{ width: `${row.share}%`, background: SERIES[3] }} />
+                </span>
+                <span className="hbar-value">{compactNumber(row.pending)}</span>
               </li>
             ))}
           </ul>
         </Panel>
 
-        <Panel title="First seen during each run" wide>
-          <ul className="hbars">
-            {crawl.runs.map((run) => (
-              <li key={run.url}>
-                <a className="hbar-label" href={run.url} target="_blank" rel="noopener noreferrer">
-                  {run.workflow} {relativeTime(run.at)}
-                </a>
-                <span className="hbar-track">
-                  <span className="hbar-fill" style={{ width: `${(run.stored / mostStored) * 100}%`, background: SERIES[0] }} />
-                </span>
-                <span className="hbar-value">{compactNumber(run.stored)}</span>
-              </li>
-            ))}
-          </ul>
+        <Panel title="Crawl runs" wide>
+          <table className="ptable">
+            <thead>
+              <tr><th>when</th><th>kind</th><th>outcome</th><th>first found</th><th>run</th></tr>
+            </thead>
+            <tbody>
+              {crawl.runs.map((run) => (
+                <tr key={run.url}>
+                  <td>{relativeTime(run.at)}</td>
+                  <td>{run.workflow}</td>
+                  <td style={{ color: run.conclusion === "success" ? STATUS.good : run.conclusion ? STATUS.serious : SERIES[0] }}>
+                    {run.conclusion ?? "running"}
+                  </td>
+                  <td>
+                    <span className="run-bar"><span style={{ width: `${(run.stored / mostStored) * 100}%`, background: SERIES[0] }} /></span>
+                    {compactNumber(run.stored)}
+                  </td>
+                  <td><a href={run.url} target="_blank" rel="noopener noreferrer">open</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <p className="progress-detail">
-            Nodes first seen between a run's start and the next run's start. An approximation: a long run can
-            find nodes after a later run has started.
+            First found counts the nodes first seen between a run's start and the next run's start. An
+            approximation: a long run can find nodes after a later run has started.
           </p>
         </Panel>
       </div>

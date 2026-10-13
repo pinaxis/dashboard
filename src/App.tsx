@@ -231,7 +231,7 @@ export default function App() {
           </main>
         )}
         {detailType && (
-          <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} onClose={() => setDetailType(null)} />
+          <KeyTypeDetail view={keyTypeView(detailType, catalogByName(catalog), data)} document={data} onClose={() => setDetailType(null)} />
         )}
       </ErrorBoundary>
       <footer className="footer">
