@@ -6,7 +6,8 @@ import { Analytics } from "./components/Analytics";
 import { CrawlProgress } from "./components/CrawlProgress";
 import { Search } from "./components/Search";
 import { PublicDashboard } from "./components/PublicDashboard";
-import { loadGraph, isPublicDocument, type GraphDocument, type PublicDocument } from "./data/graph";
+import { loadGraph, isPublicDocument, promoteLiveSecrets, type GraphDocument, type PublicDocument } from "./data/graph";
+import { Loading } from "./components/Loading";
 import { loadCatalog, catalogByName, type TargetInfo } from "./data/catalog";
 import { keyTypeView } from "./data/keyType";
 import { KeyTypeDetail } from "./components/KeyTypeDetail";
@@ -63,7 +64,7 @@ export default function App() {
       .catch((cause: Error) => setError(cause.message));
     probeSession().then((document) => {
       if (document) {
-        setPrivateData(document);
+        setPrivateData(promoteLiveSecrets(document));
         setMode("private");
         void loadCatalog().then(setCatalog);
       }
@@ -139,7 +140,7 @@ export default function App() {
     return <div className="state">Could not load the exposure graph. {error}</div>;
   }
   if (mode === "public" ? !publicData : !data) {
-    return <div className="state">Charting the exposure graph…</div>;
+    return <Loading message="Charting the exposure graph" />;
   }
 
   const header = (
@@ -194,7 +195,7 @@ export default function App() {
   }
 
   if (!data) {
-    return <div className="state">Charting the exposure graph…</div>;
+    return <Loading message="Charting the exposure graph" />;
   }
 
   return (
